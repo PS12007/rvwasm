@@ -156,7 +156,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [web, riscv-tests]
     runs-on: ubuntu-24.04
     # Needs Settings -> Pages -> Source: "GitHub Actions". Until that is set,
