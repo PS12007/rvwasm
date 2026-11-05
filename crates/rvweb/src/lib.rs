@@ -168,13 +168,36 @@ pub fn disassemble(inst: u32, pc: u64) -> String {
     disasm(inst, pc)
 }
 
-/// Run a CPU-bound benchmark: boot the given kernel and run for `cycles`.
-/// Returns elapsed instructions; timing is measured by the caller.
 #[wasm_bindgen]
-pub fn bench_run(kernel: &[u8], disk: Option<Vec<u8>>, input: &str, cycles: f64) -> Result<f64, JsError> {
-    let mut cpu = build_machine(MachineConfig { ram_size: 128 << 20, kernel: kernel.to_vec(), disk })
-        .map_err(|e| JsError::new(&e))?;
-    cpu.bus.uart.push_input(input.as_bytes());
-    cpu.run(cycles as u64);
-    Ok(cpu.instret as f64)
+extern "C" {
+    /// `performance.now()` (milliseconds), available in windows, workers and Node.
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn perf_now() -> f64;
+}
+
+fn now_secs() -> f64 {
+    perf_now() / 1000.0
+}
+
+fn measurement_json(m: rvcore::bench::Measurement) -> String {
+    format!("{{\"instret\":{},\"seconds\":{},\"runs\":{}}}", m.instret, m.secs, m.runs)
+}
+
+/// Benchmark a bare-metal riscv-tests program for at least `min_secs` of
+/// execution. Returns JSON `{instret, seconds, runs}` (seconds per run).
+#[wasm_bindgen]
+pub fn bench_baremetal(elf: &[u8], min_secs: f64) -> Result<String, JsError> {
+    rvcore::bench::bench_baremetal(elf, &now_secs, min_secs).map(measurement_json).map_err(|e| JsError::new(&e))
+}
+
+/// Benchmark the xv6 boot + shell workload. Returns JSON like `bench_baremetal`.
+#[wasm_bindgen]
+pub fn bench_xv6(kernel: &[u8], disk: &[u8]) -> Result<String, JsError> {
+    rvcore::bench::bench_xv6(kernel, disk, &now_secs, 0.0).map(measurement_json).map_err(|e| JsError::new(&e))
+}
+
+/// Names of the bare-metal benchmark programs.
+#[wasm_bindgen]
+pub fn bench_names() -> Vec<String> {
+    rvcore::bench::BAREMETAL.iter().map(|s| s.to_string()).collect()
 }

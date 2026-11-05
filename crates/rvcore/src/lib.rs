@@ -3,6 +3,7 @@
 //! The machine follows QEMU's `virt` layout closely enough to boot xv6-riscv
 //! unmodified (apart from building it without the C extension).
 
+pub mod bench;
 pub mod bus;
 pub mod cpu;
 pub mod csr;

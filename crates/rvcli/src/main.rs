@@ -2,7 +2,7 @@
 //!
 //!   rvwasm test <elf>...                      run riscv-tests binaries
 //!   rvwasm run <kernel> [--disk fs.img] ...   boot a kernel on the console
-//!   rvwasm bench <kernel> --disk fs.img ...   headless boot benchmark
+//!   rvwasm bench                              native benchmark suite
 
 use std::io::{Read, Write};
 use std::process::ExitCode;
@@ -19,7 +19,7 @@ fn usage() -> ExitCode {
   rvwasm test <elf>...
   rvwasm run <kernel.elf> [--disk FILE] [--ram MB] [--linux] [--initrd FILE]
              [--max-cycles N] [--trace N --trace-out FILE]
-  rvwasm bench <kernel.elf> --disk FILE [--script TEXT] [--expect TEXT] [--json]"
+  rvwasm bench [--bench-dir DIR] [--xv6 DIR] [--reps N] [--json FILE]"
     );
     ExitCode::from(2)
 }

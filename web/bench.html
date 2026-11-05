@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rvwasm benchmark</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { display: block; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+    td.bar { width: 30%; }
+    .bar div { height: 8px; border-radius: 4px; background: var(--accent); }
+    .bar div.n { background: var(--muted); margin-top: 3px; }
+    tfoot td { font-weight: 600; }
+    p { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><a href="index.html" class="logo" style="text-decoration:none">rv</a><span>rvwasm benchmark</span></div>
+    <div class="controls">
+      <label class="select"><input type="checkbox" id="xv6" checked> include xv6 (~5s)</label>
+      <button id="run">Run in this browser</button>
+    </div>
+  </header>
+  <div class="wrap">
+    <p>Runs the same workloads as <code>rvwasm bench</code> (native) through the WebAssembly build in a worker:
+      nine bare-metal programs from riscv-tests/benchmarks, then xv6 booting and running a short shell script.
+      Only guest execution is timed. Native numbers, when shown, come from the CI machine that built this page,
+      so the ratio is only exact when both ran on the same computer.</p>
+    <table>
+      <thead><tr><th>workload</th><th>instructions</th><th>this browser MIPS</th><th>native MIPS</th><th>ratio</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot><tr><td>geomean</td><td></td><td id="g-w">—</td><td id="g-n">—</td><td id="g-r">—</td><td></td></tr></tfoot>
+    </table>
+    <p id="status"></p>
+  </div>
+  <script type="module">
+    const $ = (id) => document.getElementById(id);
+    let native = {};
+    fetch('images/bench-native.json').then((r) => r.ok ? r.json() : null).then((j) => {
+      if (j) for (const r of j.results) native[r.name] = r.instret / r.seconds / 1e6;
+    }).catch(() => {});
+    const geo = (xs) => xs.length ? Math.exp(xs.reduce((a, x) => a + Math.log(x), 0) / xs.length) : NaN;
+    $('run').onclick = () => {
+      $('rows').innerHTML = '';
+      $('run').disabled = true;
+      const w = new Worker('bench-worker.js', { type: 'module' });
+      const got = [];
+      w.onmessage = (ev) => {
+        const m = ev.data;
+        if (m.type === 'progress') $('status').textContent = `Running ${m.name}…`;
+        if (m.type === 'result') {
+          const mips = m.instret / m.seconds / 1e6;
+          const n = native[m.name];
+          got.push({ mips, n });
+          const max = Math.max(...got.map((g) => Math.max(g.mips, g.n || 0)));
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${m.name}</td><td>${m.instret.toLocaleString()}</td><td>${mips.toFixed(1)}</td>
+            <td>${n ? n.toFixed(1) : '—'}</td><td>${n ? Math.round(100 * mips / n) + '%' : '—'}</td>
+            <td class="bar"><div style="width:${100 * mips / max}%"></div>${n ? `<div class="n" style="width:${100 * n / max}%"></div>` : ''}</td>`;
+          $('rows').appendChild(tr);
+          const gw = geo(got.map((g) => g.mips));
+          const both = got.filter((g) => g.n);
+          $('g-w').textContent = gw.toFixed(1);
+          if (both.length) {
+            $('g-n').textContent = geo(both.map((g) => g.n)).toFixed(1);
+            $('g-r').textContent = Math.round(100 * geo(both.map((g) => g.mips / g.n))) + '%';
+          }
+        }
+        if (m.type === 'done' || m.type === 'error') {
+          $('status').textContent = m.type === 'done' ? 'Done. Blue: this browser; grey: native.' : 'Error: ' + m.text;
+          $('run').disabled = false;
+          w.terminate();
+        }
+      };
+      w.postMessage({ reps: 3, xv6: $('xv6').checked });
+    };
+  </script>
+</body>
+</html>

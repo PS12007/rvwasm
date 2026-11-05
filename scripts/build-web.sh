@@ -18,3 +18,6 @@ for f in build/xv6/kernel/kernel:xv6-kernel build/xv6/fs.img:xv6-fs.img \
   src="$ROOT/${f%%:*}"; dst="$ROOT/web/images/${f##*:}"
   if [ -f "$src" ]; then cp "$src" "$dst"; echo "staged $dst"; fi
 done
+mkdir -p "$ROOT/web/images/bench"
+for f in "$ROOT"/build/bench/*.riscv; do [ -f "$f" ] && cp "$f" "$ROOT/web/images/bench/"; done
+[ -f "$ROOT/build/bench-native.json" ] && cp "$ROOT/build/bench-native.json" "$ROOT/web/images/" || true
