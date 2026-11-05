@@ -1,0 +1,6 @@
+/target
+/build
+/web/pkg
+/web/images
+node_modules
+*.img
