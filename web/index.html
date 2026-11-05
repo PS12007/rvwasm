@@ -2,121 +2,216 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>rvwasm</title>
-  <meta name="description" content="A RISC-V RV64IMA emulator in Rust + WebAssembly, booting xv6 in your browser.">
+  <meta name="description" content="A RISC-V computer in your browser: an RV64IMA emulator in Rust and WebAssembly that boots xv6 and Linux.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">rv</span><span>rvwasm</span>
-      <span class="tag">RV64IMA · Sv39 · WebAssembly</span>
+<body class="console">
+  <header class="nameplate">
+    <div class="badge">
+      <span class="badge-name">rvwasm</span>
+      <span class="badge-model">RV64·IMA system console<br><small>Sv39 · M/S/U · 10 MHz timebase</small></span>
     </div>
-    <div class="controls">
-      <label class="select">
-        <span>Guest</span>
+    <div class="keys" role="toolbar" aria-label="Machine controls">
+      <label class="selector" for="image">
+        <span class="engr">Guest OS</span>
         <select id="image">
-          <option value="xv6">xv6-riscv</option>
+          <option value="xv6">xv6 (teaching Unix)</option>
           <option value="linux" disabled>Linux 6.12 + BusyBox</option>
         </select>
       </label>
-      <button id="reset" title="Reboot the guest">Reboot</button>
-      <button id="pause" title="Pause / resume">Pause</button>
-      <button id="step" title="Execute one instruction (pauses)">Step</button>
+      <button class="key" id="reset" title="Reboot the guest"><span class="cap">Reset</span></button>
+      <button class="key" id="pause" title="Pause or resume (space)"><span class="lamp run on" id="run-lamp"></span><span class="cap" id="pause-label">Halt</span></button>
+      <button class="key" id="step" title="Run one instruction (s)"><span class="cap">Step</span></button>
+      <button class="key small" id="help-btn" title="Help and shortcuts (?)"><span class="cap">Help</span></button>
+      <button class="key small" id="about-btn" title="About this project"><span class="cap">About</span></button>
     </div>
   </header>
 
-  <main class="layout">
-    <section class="term-wrap">
-      <div id="terminal"></div>
-      <div class="hint">Try <code>ls</code>, <code>cat README</code>, <code>usertests -q</code>. Type into the terminal.</div>
+  <main class="chassis">
+    <section class="crt-unit" aria-label="Terminal">
+      <div class="bezel">
+        <div class="screen" id="screen">
+          <div id="terminal"></div>
+          <div class="scanlines" aria-hidden="true"></div>
+          <div class="boot" id="boot" hidden>
+            <div class="boot-title" id="boot-title">Booting</div>
+            <div class="boot-bar"><div id="boot-fill"></div></div>
+            <div class="boot-count" id="boot-count">0 instructions</div>
+            <div class="boot-note" id="boot-note"></div>
+          </div>
+        </div>
+      </div>
+      <div class="crt-foot">
+        <span class="engr">Console · ttyS0</span>
+        <span class="hint" id="hint"></span>
+        <button class="key small" id="drawer-btn" aria-expanded="true" aria-controls="drawer" title="Show example commands (t)"><span class="cap">Try these</span></button>
+      </div>
     </section>
 
-    <aside class="panel">
-      <div class="card status">
-        <div class="row">
-          <div>
-            <div class="label">Instructions / sec</div>
-            <div class="big" id="ips">—</div>
-          </div>
-          <div class="mode-wrap">
-            <div class="label">Privilege</div>
-            <div class="mode" id="mode">—</div>
-          </div>
-        </div>
-        <canvas id="spark" height="44"></canvas>
-        <div class="kv">
-          <span>state</span><b id="state">booting</b>
-          <span>host load</span><b id="load">—</b>
-          <span>retired</span><b id="instret">—</b>
-          <span>uptime</span><b id="uptime">—</b>
-          <span>traps</span><b id="traps">—</b>
-          <span>disk req</span><b id="disk">—</b>
-        </div>
-        <div class="label" style="margin-top:10px">Time in mode</div>
-        <div class="share" id="share">
-          <div class="u" style="width:0"></div><div class="s" style="width:0"></div><div class="m" style="width:0"></div>
-        </div>
-        <div class="legend"><span class="u">U <b id="pu">0%</b></span><span class="s">S <b id="ps">0%</b></span><span class="m">M <b id="pm">0%</b></span></div>
+    <aside class="drawer" id="drawer" aria-label="Example commands">
+      <div class="drawer-head">
+        <span class="engr">Try these</span>
+        <button class="qmark" data-tip="Click a command to type it into the terminal and run it. You can also type anything yourself.">?</button>
+        <button class="key small" id="drawer-close" title="Hide (t)"><span class="cap">Hide</span></button>
       </div>
+      <p class="drawer-intro">Never used a command line? Click one of these. It gets typed into the terminal for you.</p>
+      <div id="cmds"></div>
+    </aside>
 
-      <div class="card">
-        <div class="card-title">pc <code id="pc">—</code></div>
-        <pre id="disasm" class="disasm"></pre>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Registers</div>
-        <div id="regs" class="regs"></div>
-      </div>
-
-      <details class="card">
-        <summary class="card-title">CSRs</summary>
-        <div id="csrs" class="regs csrs"></div>
+    <aside class="instruments" id="instruments">
+      <details class="module" id="status-module" open>
+        <summary><span class="engr">Status</span><button class="qmark" data-tip="A CPU always runs at one privilege level. Machine (M) is the firmware level, Supervisor (S) is the operating system kernel, User (U) is ordinary programs like ls. The lit lamp is where the CPU is right now; the bar under each lamp is the share of recent time spent there.">?</button></summary>
+        <div class="lamps" id="mode-lamps">
+          <div class="lamp-cell"><span class="lamp m" id="lamp-m"></span><span class="engr">M</span><small>firmware</small><div class="duty"><i id="duty-m"></i></div></div>
+          <div class="lamp-cell"><span class="lamp s" id="lamp-s"></span><span class="engr">S</span><small>kernel</small><div class="duty"><i id="duty-s"></i></div></div>
+          <div class="lamp-cell"><span class="lamp u" id="lamp-u"></span><span class="engr">U</span><small>programs</small><div class="duty"><i id="duty-u"></i></div></div>
+          <div class="lamp-cell"><span class="lamp idle" id="lamp-idle"></span><span class="engr">WFI</span><small>idle</small><div class="duty"><i id="duty-load"></i></div></div>
+        </div>
+        <div class="state-line"><span class="engr">State</span> <span id="state">booting</span></div>
       </details>
 
-      <div class="card">
-        <div class="card-title">Instruction trace</div>
-        <div class="trace-row">
-          <label>Capacity
+      <details class="module" id="speed-module" open>
+        <summary><span class="engr">Speed</span><button class="qmark" data-tip="How many RISC-V instructions the emulator runs each second, measured in your browser. The trace is the last 30 seconds. It drops when the guest has nothing to do and waits for you.">?</button></summary>
+        <div class="readout big"><span id="ips">-</span><small id="ips-unit">IPS</small></div>
+        <canvas id="spark" height="60" aria-label="Instructions per second over the last 30 seconds"></canvas>
+        <div class="counters">
+          <div><span class="engr">Retired</span><span class="readout" id="instret">-</span></div>
+          <div><span class="engr">Uptime</span><span class="readout" id="uptime">-</span></div>
+          <div><span class="engr">Traps<button class="qmark" data-tip="A trap is any time the CPU stops what it was doing and jumps into the kernel: a program asking for a service (system call), a timer tick, a key press, or an error like touching memory it may not.">?</button></span><span class="readout" id="traps">-</span></div>
+          <div><span class="engr">Disk I/O</span><span class="readout" id="disk">-</span></div>
+        </div>
+      </details>
+
+      <details class="module" id="pc-module" open>
+        <summary><span class="engr">Program counter</span><button class="qmark" data-tip="The address of the instruction the CPU runs next, with the machine code around it translated back to readable assembly. The highlighted line is the current instruction.">?</button></summary>
+        <div class="readout pc" id="pc">-</div>
+        <pre class="listing" id="disasm"></pre>
+      </details>
+
+      <details class="module" id="regs-module" open>
+        <summary><span class="engr">Registers x0-x31</span><button class="qmark" data-tip="Registers are the CPU's 32 scratch slots, each holding one 64-bit number. Everything the CPU computes passes through them. A value lights up briefly when it changes. Names like a0 or sp are their roles: a0-a7 carry function arguments, sp is the stack pointer, ra the return address.">?</button></summary>
+        <div class="regs" id="regs"></div>
+      </details>
+
+      <details class="module" id="rec-module" open>
+        <summary><span class="engr">Trace recorder</span><button class="qmark" data-tip="Records the last instructions the CPU ran, plus every trap and return. Press Record, run a command, press Stop. You get a plain-English summary and can open a zoomable timeline.">?</button></summary>
+        <div class="rec-row">
+          <button class="key rec" id="trace-btn"><span class="lamp rec-lamp" id="rec-lamp"></span><span class="cap" id="trace-label">Record</span></button>
+          <label class="selector small" for="trace-cap"><span class="engr">Keep last</span>
             <select id="trace-cap">
-              <option value="50000">50k</option>
-              <option value="200000" selected>200k</option>
-              <option value="1000000">1M</option>
+              <option value="50000">50k instr.</option>
+              <option value="200000" selected>200k instr.</option>
+              <option value="1000000">1M instr.</option>
             </select>
           </label>
-          <button id="trace-btn">Record</button>
         </div>
-        <div class="trace-row small" id="trace-status">Records the most recent instructions and traps into a ring buffer.</div>
-        <div class="trace-row">
-          <button id="trace-open" disabled>Open timeline</button>
-          <button id="trace-dl" disabled>Download JSON</button>
+        <p class="note" id="trace-status">Press Record, run a command, then press Stop.</p>
+        <div class="explain" id="explain" hidden></div>
+        <div class="rec-row">
+          <button class="key small" id="trace-open" disabled><span class="cap">Open timeline</span></button>
+          <button class="key small" id="trace-dl" disabled><span class="cap">Save JSON</span></button>
         </div>
-      </div>
-      <details class="card" id="custom-card">
-        <summary class="card-title">Boot your own kernel</summary>
-        <div class="trace-row small">A bare-metal RV64IMA ELF (entered in M-mode, like xv6) with an optional virtio
-          disk image, or a Linux <code>Image</code> with an optional initramfs. Files stay in your browser.</div>
-        <div class="trace-row"><label for="custom-kernel">Kernel</label><input type="file" id="custom-kernel"></div>
-        <div class="trace-row"><label for="custom-extra">Disk / initramfs</label><input type="file" id="custom-extra"></div>
-        <div class="trace-row"><button id="custom-boot" disabled>Boot</button></div>
       </details>
-      <div class="card" id="disk-card" hidden>
-        <div class="card-title">Disk</div>
-        <div class="trace-row small" id="disk-status">Changes to xv6's disk are kept in this browser.</div>
-        <div class="trace-row">
-          <button id="disk-dl">Download fs.img</button>
-          <button id="disk-reset" title="Throw away saved changes and boot from the original image">Reset disk</button>
+
+      <details class="module" id="disk-card">
+        <summary><span class="engr">Disk</span><button class="qmark" data-tip="xv6 keeps its files on a virtual disk. Changes you make are saved in this browser, so they are still there after a reload.">?</button></summary>
+        <p class="note" id="disk-status">Changes to xv6's disk are kept in this browser.</p>
+        <div class="rec-row">
+          <button class="key small" id="disk-dl"><span class="cap">Download fs.img</span></button>
+          <button class="key small" id="disk-reset" title="Throw away saved changes and boot from the original image"><span class="cap">Reset disk</span></button>
         </div>
+      </details>
+
+      <details class="module" id="csr-module">
+        <summary><span class="engr">Control registers</span><button class="qmark" data-tip="CSRs are special registers the operating system uses to control the CPU: where to jump on a trap (mtvec, stvec), why the last trap happened (mcause, scause), which page table is active (satp), and so on.">?</button></summary>
+        <div id="csrs" class="csrs"></div>
+      </details>
+
+      <details class="module" id="custom-card">
+        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMA ELF (with an optional disk image), or a Linux Image (with an optional initramfs). The files never leave your browser.">?</button></summary>
+        <div class="field"><label for="custom-kernel" class="engr">Kernel</label><input type="file" id="custom-kernel"></div>
+        <div class="field"><label for="custom-extra" class="engr">Disk or initramfs</label><input type="file" id="custom-extra"></div>
+        <button class="key small" id="custom-boot" disabled><span class="cap">Boot it</span></button>
+      </details>
+
+      <div class="plate">
+        <a href="trace.html">Timeline viewer</a> · <a href="bench.html">Benchmark</a> · <a href="https://github.com/PS12007/rvwasm">Source</a>
       </div>
-      <div class="foot"><a href="trace.html">Timeline viewer</a> · <a href="bench.html">Benchmark</a> · <a href="https://github.com/PS12007/rvwasm">Source</a></div>
     </aside>
   </main>
 
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+
+  <dialog class="sheet" id="help">
+    <div class="sheet-head"><span class="engr">Operator's notes</span><button class="key small" data-close><span class="cap">Close</span></button></div>
+    <div class="sheet-body">
+      <h2>Using the console</h2>
+      <p>The dark screen is a terminal connected to the emulated computer's serial port. Click it and type, or use <b>Try these</b> for ready-made commands.</p>
+      <h3>Keyboard shortcuts</h3>
+      <p class="small">These work when the terminal isn't focused. Click anywhere on the panel first.</p>
+      <table class="keys-table">
+        <tr><td><kbd>Space</kbd></td><td>Halt or resume the CPU</td></tr>
+        <tr><td><kbd>S</kbd></td><td>Run one instruction, then halt</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Start or stop the trace recorder</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Show or hide <i>Try these</i></td></tr>
+        <tr><td><kbd>?</kbd></td><td>Open these notes</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close a panel</td></tr>
+      </table>
+      <h3>Words on the panel</h3>
+      <dl class="gloss">
+        <dt>Register</dt><dd>One of the CPU's 32 small storage slots. Every calculation reads from and writes to them.</dd>
+        <dt>Program counter</dt><dd>The address of the next instruction to run.</dd>
+        <dt>Privilege mode</dt><dd>Machine (firmware), Supervisor (operating-system kernel) or User (normal programs). Programs can't touch hardware directly; they ask the kernel.</dd>
+        <dt>System call</dt><dd>A program asking the kernel to do something for it, like read a file or print text. The CPU jumps from U to S mode to handle it.</dd>
+        <dt>Trap</dt><dd>Any jump into the kernel: system calls, timer ticks, key presses, disk activity, or errors.</dd>
+        <dt>Interrupt</dt><dd>A trap caused by hardware rather than the running program, like the timer or the keyboard.</dd>
+        <dt>CSR</dt><dd>Control and status register: settings the kernel uses to steer the CPU.</dd>
+        <dt>WFI</dt><dd>"Wait for interrupt". The kernel has nothing to do and pauses the CPU until something happens.</dd>
+      </dl>
+      <p><button class="key small" id="tour-again"><span class="cap">Show the tour again</span></button></p>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="about">
+    <div class="sheet-head"><span class="engr">About this machine</span><button class="key small" data-close><span class="cap">Close</span></button></div>
+    <div class="sheet-body">
+      <h2>rvwasm</h2>
+      <p>A RISC-V computer emulated in your browser. The CPU is written in Rust and compiled to WebAssembly; nothing runs on a server.</p>
+      <h3>What's emulated</h3>
+      <ul>
+        <li>A 64-bit RISC-V processor: RV64IMA with Zicsr and Zifencei (integer maths, multiply/divide, atomics, control registers).</li>
+        <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
+        <li>Sv39 virtual memory with a software TLB.</li>
+        <li>A 16550 serial port (the terminal), CLINT timer, PLIC interrupt controller and a virtio block disk.</li>
+      </ul>
+      <h3>What it runs</h3>
+      <p><b>xv6</b> is MIT's small teaching version of Unix. <b>Linux 6.12</b> boots with BusyBox, a compact set of standard Unix commands. Both are built from source for this CPU.</p>
+      <p>It passes all 196 official riscv-tests for its instruction set, and xv6's own test suite.</p>
+      <p><a href="https://github.com/PS12007/rvwasm">Source code on GitHub</a></p>
+    </div>
+  </dialog>
+
+  <div class="tour" id="tour" hidden>
+    <div class="tour-ring" id="tour-ring"></div>
+    <div class="tour-card" id="tour-card" role="dialog" aria-live="polite">
+      <div class="engr" id="tour-step"></div>
+      <p id="tour-text"></p>
+      <div class="tour-actions">
+        <button class="key small" id="tour-skip"><span class="cap">Skip</span></button>
+        <button class="key small" id="tour-next"><span class="cap">Next</span></button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-webgl@0.18.0/lib/addon-webgl.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

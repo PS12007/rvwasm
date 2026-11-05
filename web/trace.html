@@ -7,19 +7,19 @@
   <meta name="description" content="Timeline viewer for rvwasm instruction traces.">
   <link rel="stylesheet" href="style.css">
   <style>
-    body { height: 100vh; }
+    body { height: 100vh; display: flex; flex-direction: column; }
     .tl-main { flex: 1; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 12px 16px; }
     .tl-summary { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); align-items: center; }
     .tl-summary b { color: var(--text); font-family: var(--mono); font-weight: 500; }
-    .tl-canvas-wrap { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+    .tl-canvas-wrap { position: relative; background: var(--crt); border-radius: 2px; box-shadow: inset 0 2px 6px rgba(0,0,0,.85), 0 0 0 2px var(--case-seam); }
     #tl { display: block; width: 100%; height: 300px; cursor: crosshair; }
-    #tip { position: absolute; pointer-events: none; background: #0b0f15; border: 1px solid var(--line); border-radius: 6px;
+    #tip { position: absolute; pointer-events: none; background: #e8e0cd; color: #2a241c; box-shadow: 0 0 0 1px #8c8372, 0 6px 18px rgba(0,0,0,.5);
            padding: 6px 8px; font: 12px var(--mono); white-space: pre; display: none; z-index: 2; }
     .tl-bottom { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 10px; min-height: 0; }
-    .list { background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: auto; font: 12px/18px var(--mono); position: relative; }
+    .list { background: var(--crt); color: var(--phosphor-dim); border-radius: 2px; box-shadow: inset 0 2px 6px rgba(0,0,0,.85), 0 0 0 2px var(--case-seam); overflow: auto; font: 12px/18px var(--mono); position: relative; }
     .list .row { position: absolute; left: 0; right: 0; height: 18px; padding: 0 10px; white-space: pre; cursor: pointer; }
     .list .row:hover { background: rgba(255,255,255,0.04); }
-    .list .row.sel { background: rgba(90,176,255,0.2); }
+    .list .row.sel { background: var(--phosphor); color: var(--crt); }
     .list .row .p { display: inline-block; width: 14px; border-radius: 3px; text-align: center; color: #0b0f15; font-weight: 700; margin-right: 8px; }
     .p.U { background: var(--u); } .p.S { background: var(--s); } .p.M { background: var(--m); }
     .list .row .sym { color: var(--muted); }
@@ -32,7 +32,7 @@
     .k.exception { background: var(--m); } .k.interrupt { background: var(--accent); } .k.xret { background: var(--muted); }
     .fn { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font: 12px var(--mono); }
     .fn .bar { grid-column: 1 / -1; height: 3px; background: var(--accent); border-radius: 2px; margin-bottom: 4px; }
-    .drop { display: grid; place-items: center; height: 100%; color: var(--muted); text-align: center; border: 2px dashed var(--line); border-radius: 12px; margin: 16px; }
+    .drop { display: grid; place-items: center; height: 100%; color: var(--muted); text-align: center; border: 2px dashed var(--line); border-radius: 2px; margin: 16px; }
     .drop code { color: var(--text); }
     .legend2 { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
     .legend2 i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
@@ -45,7 +45,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><a href="index.html" class="logo" style="text-decoration:none">rv</a><span>Timeline</span>
+    <div class="brand"><a href="index.html" class="logo" style="text-decoration:none">rvwasm</a><span>Timeline</span>
       <span class="tag">instruction trace viewer</span></div>
     <div class="controls">
       <button id="zoom-out" title="Zoom out (or scroll)">−</button>

@@ -3,7 +3,15 @@ import init, { disassemble } from './pkg/rvweb.js';
 
 const $ = (id) => document.getElementById(id);
 const MODES = { 0: 'U', 1: 'S', 3: 'M' };
-const MODE_COLORS = { 0: '#4cc38a', 1: '#f0b44c', 3: '#ef6f6c' };
+// Colours come from the console's palette (style.css).
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const hexRgb = (h) => { const v = parseInt(h.replace('#', ''), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
+const PAL = {
+  u: cssVar('--lamp-u') || '#7dea6a', s: cssVar('--lamp-s') || '#ffbf3a', m: cssVar('--lamp-m') || '#ff5a3c',
+  idle: cssVar('--lamp-idle') || '#6fb7ff', text: cssVar('--engrave') || '#d4cab6', dim: cssVar('--engrave-dim') || '#a59b88',
+  back: cssVar('--crt') || '#140d05', phosphor: cssVar('--phosphor') || '#ffb84d', faint: cssVar('--phosphor-faint') || '#6b4a1e',
+};
+const MODE_COLORS = { 0: PAL.u, 1: PAL.s, 3: PAL.m };
 const EXC = ['instruction misaligned', 'instruction access fault', 'illegal instruction', 'breakpoint',
   'load misaligned', 'load access fault', 'store misaligned', 'store access fault', 'ecall from U',
   'ecall from S', 'reserved', 'ecall from M', 'instruction page fault', 'load page fault', 'reserved',
@@ -130,7 +138,7 @@ function draw() {
   const pcTop = Math.round(LANES.pc[0] * dpr), pcBot = H - Math.round(8 * dpr);
   const modeTop = Math.round(LANES.mode[0] * dpr), modeBot = Math.round(LANES.mode[1] * dpr);
   const span = view[1] - view[0];
-  const rgb = { 0: [76, 195, 138], 1: [240, 180, 76], 3: [239, 111, 108] };
+  const rgb = { 0: hexRgb(PAL.u), 1: hexRgb(PAL.s), 3: hexRgb(PAL.m) };
   const step = Math.max(1, Math.floor(span / (W * 64))); // subsample huge ranges
   const colCount = new Uint32Array(W * 4); // instructions per mode per column
   for (let i = view[0]; i < view[1]; i += step) {
@@ -167,7 +175,7 @@ function draw() {
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   // Axis ticks: instruction index and cycle.
-  ctx.fillStyle = '#8593a6';
+  ctx.fillStyle = PAL.dim;
   ctx.font = '10px ui-monospace, monospace';
   ctx.textBaseline = 'top';
   const ticks = 6;
@@ -182,9 +190,9 @@ function draw() {
   // Lane labels, drawn on a backing so they stay readable over the data.
   const label = (text, y) => {
     const tw = ctx.measureText(text).width;
-    ctx.fillStyle = 'rgba(22,29,39,0.85)';
+    ctx.fillStyle = PAL.back;
     ctx.fillRect(2, y - 1, tw + 6, 13);
-    ctx.fillStyle = '#c4ccd8';
+    ctx.fillStyle = PAL.text;
     ctx.fillText(text, 5, y);
   };
   label('privilege', LANES.mode[0] + 2);
@@ -195,7 +203,7 @@ function draw() {
   for (const e of T.events) {
     if (e.idx < view[0] || e.idx >= view[1]) continue;
     const x = xOf(e.idx, w);
-    ctx.fillStyle = e.kind === 'exception' ? '#ef6f6c' : e.kind === 'interrupt' ? '#5ab0ff' : '#5f6b7a';
+    ctx.fillStyle = e.kind === 'exception' ? PAL.m : e.kind === 'interrupt' ? PAL.idle : PAL.faint;
     const [a, b] = LANES.events;
     if (e.kind === 'xret') ctx.fillRect(x, a + 8, 1, b - a - 8);
     else ctx.fillRect(x - 0.5, a, 2, b - a);
@@ -203,7 +211,7 @@ function draw() {
 
   // Selection cursor.
   if (selected >= view[0] && selected < view[1]) {
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillStyle = PAL.phosphor;
     ctx.fillRect(xOf(selected, w), 18, 1, h - 18);
   }
   renderFunctions();
