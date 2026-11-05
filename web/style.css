@@ -26,7 +26,8 @@
   --crt-edge: #070402;
   --phosphor: #ffb84d;
   --phosphor-dim: #c98a34;
-  --phosphor-faint: #6b4a1e;
+  --phosphor-faint: #6b4a1e;   /* decoration only (unlit digits, prompts) */
+  --phosphor-label: #a57d3e;   /* secondary text on the CRT, >= 4.5:1 */
   --phosphor-glow: rgba(255, 168, 56, 0.55);
   /* lamps */
   --lamp-m: #ff5a3c;
@@ -464,7 +465,7 @@ code, kbd, pre { font-family: var(--mono); }
   box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.85);
 }
 .listing .cur { display: block; color: var(--crt); background: var(--phosphor); text-shadow: none; }
-.listing .sym { color: var(--phosphor-faint); }
+.listing .sym { color: var(--phosphor-label); }
 .listing .cur .sym { color: #5a3a10; }
 
 .regs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
