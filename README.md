@@ -1,172 +1,134 @@
 # rvwasm
 
-A RISC-V emulator written in Rust that compiles to WebAssembly and runs in the browser.
-It implements **RV64IMA + Zicsr + Zifencei** with M/S/U privilege modes, traps and
-interrupts, Sv39 virtual memory, and the devices needed to boot real operating systems:
-a 16550 UART, CLINT, PLIC and a virtio-mmio block device.
+A RISC-V computer that runs in a browser tab. The CPU is written in Rust, compiled to
+WebAssembly, and good enough to boot xv6 and Linux.
 
-- Passes all **196** official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
-  in the rv64ui, rv64um, rv64ua, rv64si and rv64mi suites (both `-p` and `-v` environments).
-- Boots **xv6-riscv** to an interactive shell and passes its full `usertests -q` suite.
-- Boots **Linux 6.12 with a BusyBox userland**, using an SBI firmware implemented inside the emulator.
-- Web front end with an xterm.js terminal and a live panel: registers, current privilege
-  mode, instructions per second, time spent per mode, disassembly around the PC, CSRs.
-- An instruction trace recorder with a timeline viewer.
-- Native vs WebAssembly benchmarks.
+**Try it: [ps12007.github.io/rvwasm](https://ps12007.github.io/rvwasm/)**
 
-## Layout
+![xv6 booting in the browser, then running ls, cat and forktest](docs/media/xv6.gif)
 
-| Path | What |
-|---|---|
-| `crates/rvcore` | The emulator: CPU (`cpu.rs`, `exec.rs`), CSRs, Sv39 MMU with a software TLB (`mmu.rs`), bus and devices, ELF loader, disassembler, trace recorder, SBI + device tree for Linux, shared benchmark workloads |
-| `crates/rvcli` | Native front end, binary `rvwasm`: run tests, boot kernels on your terminal, benchmark |
-| `crates/rvweb` | wasm-bindgen bindings used by the web page |
-| `web/` | Static site: `index.html` (terminal + live panel), `trace.html` (timeline viewer), `bench.html` (in-browser benchmark) |
-| `third_party/` | Submodules: riscv-tests, xv6-riscv |
-| `tests/riscv-tests.mk` | Builds the ISA tests for rv64ima |
-| `linux/` | Kernel config fragment, initramfs files (`rootfs/`), and a libc-free fallback `/init` (`init.c`) |
-| `scripts/` | Builds for xv6, Linux, benchmarks and the web bundle |
-| `bench/` | WebAssembly benchmark runner (Node) and report generator |
+That's xv6, MIT's teaching Unix, booting from a virtio disk image in a few seconds and
+taking commands. The panel on the right is the emulator itself: the registers, which
+privilege level the CPU is in, how many guest instructions per second it is retiring, and
+the code around the program counter.
 
-## Building
+## What it emulates
 
-Requirements: Rust (stable), and on Ubuntu 24.04:
+- An RV64IMA hart with Zicsr and Zifencei: the base integer ISA, multiply/divide, atomics.
+- Machine, supervisor and user mode, with traps, delegation and interrupts.
+- Sv39 paging, with the accessed/dirty bits updated in hardware.
+- A 16550 UART, the CLINT timer, a PLIC, and a virtio-mmio block device, at the same
+  addresses as QEMU's `virt` board.
+- The Sstc timer extension, which current xv6 relies on.
+
+It passes all 196 tests in the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
+suites for this ISA (rv64ui, um, ua, si, mi, in both the physical and virtual-memory
+variants), and xv6's own `usertests` runs to the end with ALL TESTS PASSED. CI checks both on
+every push.
+
+## Linux
+
+![Linux 6.12 booting, then uname, /proc/cpuinfo and top in BusyBox](docs/media/linux.gif)
+
+Pick "Linux 6.12 + BusyBox" in the header. There is no OpenSBI here: when the kernel makes
+an SBI call, the emulator answers it directly, so Linux starts in supervisor mode on a
+device tree the emulator writes at boot. The kernel is built from `tinyconfig` with no
+compressed instructions and no FPU, and userland is BusyBox on musl, all compiled for plain
+rv64ima with soft float. It reaches a shell after about 100 million instructions.
+
+## Looking inside
+
+![The timeline viewer showing a user-mode ecall entering the kernel's trap handler](docs/media/timeline.png)
+
+Hit Record on the main page, do something, hit Stop, then Open timeline. The recorder keeps
+the most recent instructions and every trap, interrupt and return, and the viewer lets you
+scroll along them: privilege level across the top, trap markers, where the PC was, and the
+disassembled, symbolised instructions underneath. Above, a user program's `ecall` lands in
+xv6's trampoline at `0x3ffffff000`.
+
+The command-line runner records the same format:
 
 ```bash
-sudo apt-get install gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf gcc-riscv64-linux-gnu flex bison bc
+rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img --trace 200000 --trace-out trace.json
 ```
 
-For the web build, also `rustup target add wasm32-unknown-unknown` and `cargo install wasm-pack`.
+## Speed
+
+It's a straightforward interpreter. On my 4-core cloud VM:
+
+| | million instructions per second |
+|---|---:|
+| native (`rvwasm bench`) | ~190 |
+| WebAssembly in Chromium | ~130 |
+| WebAssembly in Node 22 | ~120 |
+
+So the browser build runs at about two thirds of native speed. Both builds run identical
+workloads (nine programs from riscv-tests/benchmarks plus an xv6 session) through the same
+Rust code in `rvcore::bench`, and only guest execution is timed. You can run the browser half
+yourself on the [benchmark page](https://ps12007.github.io/rvwasm/bench.html); CI publishes
+both sets of numbers in each run's summary.
+
+## Building it
+
+You need Rust, and on Ubuntu 24.04:
 
 ```bash
+sudo apt-get install gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf \
+  gcc-riscv64-linux-gnu flex bison bc libelf-dev rsync
 git submodule update --init --recursive
 cargo build --release
 ```
 
-### riscv-tests
+Then any of:
 
 ```bash
+# the ISA tests
 make -f tests/riscv-tests.mk -j"$(nproc)"
 ./target/release/rvwasm test build/riscv-tests/*
-```
 
-### xv6
-
-xv6's Makefile hard-codes `-march=rv64gc`; `scripts/build-xv6.sh` builds a copy with
-`-march=rv64ima_zicsr_zifencei -mabi=lp64` so it contains no compressed or FP instructions.
-
-```bash
+# xv6 on your terminal (Ctrl-A x quits)
 ./scripts/build-xv6.sh
 ./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img
-```
 
-Press `Ctrl-A x` to quit.
-
-### Linux
-
-```bash
-sudo apt-get install rsync libelf-dev   # in addition to the packages above
+# Linux + BusyBox
 ./scripts/build-linux.sh
 ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
-```
 
-The kernel is built from `tinyconfig` plus `linux/rvwasm.config` (no C extension, no FPU,
-one hart). It boots straight into S-mode: `ecall`s from S-mode are handled by an SBI v2.0
-implementation in `rvcore::linux` (base, timer, IPI, RFENCE, HSM, SRST, debug console),
-and the device tree is generated at boot. Boot to the shell takes about 48 million instructions.
-
-Userspace is BusyBox 1.36.1 on musl 1.2.5, both built by the script. The target is
-soft-float (lp64) with no compressed instructions, which no distribution packages a libc
-for, so musl is compiled from source and linked against the `rv64im/lp64` libgcc and crt
-files from the bare-metal toolchain. Sources are shallow clones pinned to exact commits:
-Linux from github.com/torvalds/linux, musl and BusyBox from their GitHub mirrors
-(`kraj/musl`, `mirror/busybox`), since the upstream hosts may be unreachable from CI.
-Booting to the BusyBox shell takes about 100 million instructions. `BUSYBOX=0` builds a
-tiny libc-free shell (`linux/init.c`) instead.
-
-### Web page
-
-```bash
-./scripts/build-web.sh        # builds web/pkg and stages images into web/images
+# the web page (needs wasm32-unknown-unknown and wasm-pack)
+./scripts/build-web.sh
 python3 -m http.server -d web 8000
 ```
 
-Open http://localhost:8000. Pick xv6 or Linux in the header. The emulator runs in a Web
-Worker; while the guest sits in `wfi`, guest time advances with real time instead of
-spinning the CPU.
+xv6 normally builds for rv64gc, so `build-xv6.sh` compiles a copy with the ISA string
+changed to rv64ima. `build-linux.sh` shallow-clones Linux v6.12, musl 1.2.5 and BusyBox 1.36.1
+(the last two from their GitHub mirrors, pinned to exact commits) and refuses to finish if a
+compressed or floating-point instruction ends up in the output.
 
-## Instruction traces
+## How it's put together
 
-Record from the web page (Instruction trace → Record → Stop → Open timeline), or natively:
+- `crates/rvcore` is the machine. `cpu.rs` has the run loop, traps and CSRs, `exec.rs` the
+  instruction set, `mmu.rs` the page-table walker and TLBs, `devices/` the UART, CLINT, PLIC
+  and virtio disk, and `linux.rs` the SBI firmware and device tree.
+- `crates/rvcli` is the `rvwasm` command: `test`, `run` and `bench`.
+- `crates/rvweb` is the wasm-bindgen wrapper the page talks to.
+- `web/` is the site. The emulator runs in a Web Worker so typing stays responsive, and
+  when the guest is idle in `wfi` it stops burning CPU and lets guest time follow the clock.
 
-```bash
-./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img \
-  --trace 200000 --trace-out trace.json
-```
+A few choices that made it fast enough. Instructions run in chunks that stop at any trap,
+return or device write, which is when interrupts get rechecked; between those points nothing
+else is looked at. Each TLB entry is only filled once the permission checks for the current
+mode have passed, so a hit is a compare and an add, and the whole TLB is flushed by bumping a
+counter. Instruction fetch remembers the page it's in. Guest time is derived from the
+instruction count, so a run is deterministic: the same disk and the same keystrokes give
+the same result every time.
 
-The recorder keeps a ring buffer of the most recent instructions (cycle, pc, encoding,
-privilege) plus every exception, interrupt and `xRET`. `web/trace.html` shows a privilege
-band, trap markers, a PC-over-time scatter (addresses ranked so code regions stack
-compactly), a disassembled and symbolised instruction list, and the hottest functions in
-the visible range. Scroll to zoom, drag to pan, click to inspect.
+## Not done yet
 
-## Benchmarks
-
-Both builds run the same workloads from `rvcore::bench`: nine bare-metal programs from
-riscv-tests/benchmarks and an xv6 run (boot, then `forktest`, `wc`, `grep`, `stressfs` from
-the shell). Only guest execution is timed.
-
-```bash
-./scripts/build-bench.sh
-./target/release/rvwasm bench --json build/bench-native.json
-./scripts/build-web.sh && node bench/wasm-bench.mjs --json build/bench-wasm.json
-node bench/compare.mjs build/bench-native.json build/bench-wasm.json
-```
-
-`web/bench.html` runs the WebAssembly side in your browser. CI publishes the comparison in
-each run's job summary.
-
-Results on the development machine (4-core cloud VM, Rust 1.97, Node 22):
-
-| workload | instructions | native MIPS | wasm (Node) MIPS | wasm / native |
-|---|---:|---:|---:|---:|
-| dhrystone | 192,040 | 204.6 | 127.4 | 62% |
-| median | 13,352 | 178.4 | 109.0 | 61% |
-| memcpy | 29,224 | 210.8 | 121.6 | 58% |
-| multiply | 50,216 | 211.4 | 141.9 | 67% |
-| qsort | 232,488 | 201.9 | 128.2 | 64% |
-| rsort | 370,728 | 214.3 | 126.7 | 59% |
-| spmv | 2,385,448 | 216.4 | 133.3 | 62% |
-| towers | 9,256 | 145.3 | 96.2 | 66% |
-| vvadd | 8,232 | 176.6 | 111.7 | 63% |
-| xv6 | 537,279,954 | 186.4 | 129.9 | 70% |
-| **geomean** | | **193.3** | **121.9** | **63%** |
-
-Headless Chromium on the same machine measured a 131.5 MIPS geomean (68% of native).
-
-## Design notes
-
-- **Interpreter loop.** Instructions run in chunks of up to 512. A chunk ends early on any
-  trap, `xRET`, CSR write or MMIO store, which is when device state and pending interrupts
-  are re-checked. Since chunks never cross a privilege change, per-mode instruction counts
-  come for free.
-- **MMU.** Separate fetch/load/store TLBs (256 entries each) are filled only after the
-  permission checks for the current privilege, `SUM` and `MXR` pass, so a hit needs no
-  further checks. Any change to those inputs bumps a generation counter, invalidating all
-  entries in O(1). A/D bits are updated in hardware (Svadu behaviour).
-- **Time.** `mtime` advances at one tick per 10 cycles (10 MHz at a nominal 100 MIPS), so
-  runs are deterministic. In `wfi` the emulator skips ahead to the next timer event.
-- **Sstc.** `stimecmp` is supported (xv6 uses it); the Linux SBI timer is implemented on top of it.
-- **Misaligned accesses** are handled in hardware, including ones that cross a page;
-  misaligned atomics trap.
-
-## Continuous integration
-
-`.github/workflows/ci.yml` runs formatting, clippy and unit tests; builds and runs the
-riscv-tests; builds xv6 and runs `usertests -q`; builds and boots Linux; builds the
-WebAssembly bundle and benchmarks it against native. On pushes to `main` it deploys
-`web/` to GitHub Pages (enable Pages with source "GitHub Actions" in the repository settings).
+- No compressed (C) or floating-point (F/D) instructions, so stock rv64gc binaries won't run.
+- One hart only.
+- No snapshots: a reload boots from scratch.
+- The disk lives in memory; changes vanish when you close the tab.
 
 ## License
 
-MIT. riscv-tests, xv6-riscv and Linux are under their own licenses.
+MIT. riscv-tests, xv6, Linux, musl and BusyBox keep their own licenses.
