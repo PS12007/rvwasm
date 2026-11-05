@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -156,6 +157,9 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [web, riscv-tests]
     runs-on: ubuntu-24.04
+    # Needs Settings -> Pages -> Source: "GitHub Actions". Until that is set,
+    # a failed deploy should not mark the whole run red.
+    continue-on-error: true
     permissions:
       pages: write
       id-token: write
