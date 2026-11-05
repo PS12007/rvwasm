@@ -36,6 +36,10 @@ device tree the emulator writes at boot. The kernel is built from `tinyconfig` w
 compressed instructions and no FPU, and userland is BusyBox on musl, all compiled for plain
 rv64ima with soft float. It reaches a shell after about 100 million instructions.
 
+You can also boot your own build: open "Boot your own kernel" in the side panel and pick a
+bare-metal ELF (with an optional disk image) or a Linux `Image` (with an optional initramfs).
+The files never leave your browser.
+
 ## Looking inside
 
 ![The timeline viewer showing a user-mode ecall entering the kernel's trap handler](docs/media/timeline.png)

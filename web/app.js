@@ -70,6 +70,24 @@ fetch('images/linux-Image', { method: 'HEAD' }).then((r) => {
 }).catch(() => {});
 $('image').value = currentImage;
 $('image').onchange = () => { currentImage = $('image').value; boot(); };
+
+// ------------------------------------------------------------ custom kernel
+
+$('custom-kernel').onchange = () => { $('custom-boot').disabled = !$('custom-kernel').files.length; };
+$('custom-boot').onclick = async () => {
+  const kernel = new Uint8Array(await $('custom-kernel').files[0].arrayBuffer());
+  const extraFile = $('custom-extra').files[0];
+  const extra = extraFile ? new Uint8Array(await extraFile.arrayBuffer()) : null;
+  currentImage = 'custom';
+  $('disk-card').hidden = true;
+  document.querySelector('.hint').textContent = `Booting ${$('custom-kernel').files[0].name}.`;
+  prevPriv = [];
+  privShare = [0, 0, 0];
+  term.reset();
+  setPaused(false);
+  worker.postMessage({ type: 'boot', image: 'custom', kernel, extra, term: { rows: term.rows, cols: term.cols } });
+  term.focus();
+};
 $('reset').onclick = () => boot();
 $('pause').onclick = () => setPaused(!paused);
 $('step').onclick = () => { setPaused(true, false); worker.postMessage({ type: 'step', count: 1 }); };

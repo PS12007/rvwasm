@@ -95,6 +95,14 @@
           <button id="trace-dl" disabled>Download JSON</button>
         </div>
       </div>
+      <details class="card" id="custom-card">
+        <summary class="card-title">Boot your own kernel</summary>
+        <div class="trace-row small">A bare-metal RV64IMA ELF (entered in M-mode, like xv6) with an optional virtio
+          disk image, or a Linux <code>Image</code> with an optional initramfs. Files stay in your browser.</div>
+        <div class="trace-row"><label for="custom-kernel">Kernel</label><input type="file" id="custom-kernel"></div>
+        <div class="trace-row"><label for="custom-extra">Disk / initramfs</label><input type="file" id="custom-extra"></div>
+        <div class="trace-row"><button id="custom-boot" disabled>Boot</button></div>
+      </details>
       <div class="card" id="disk-card" hidden>
         <div class="card-title">Disk</div>
         <div class="trace-row small" id="disk-status">Changes to xv6's disk are kept in this browser.</div>

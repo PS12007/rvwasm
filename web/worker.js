@@ -81,7 +81,10 @@ async function maybeSaveDisk(now) {
 
 let currentImage = null;
 
-async function boot(image, term, freshDisk = false) {
+// A Linux Image has "RISCV\0\0\0" at byte 48; anything else is treated as an ELF.
+const isLinuxImage = (b) => b.length > 56 && String.fromCharCode(...b.slice(48, 53)) === 'RISCV';
+
+async function boot(image, term, freshDisk = false, custom = null) {
   currentImage = image;
   diskWrites = 0;
   diskDirtyAt = 0;
@@ -92,7 +95,12 @@ async function boot(image, term, freshDisk = false) {
   paused = false;
   ipsHistory = [];
   postMessage({ type: 'status', text: `Downloading ${image} images…` });
-  if (image === 'linux') {
+  if (image === 'custom') {
+    const size = term ? ` rvwasm_rows=${term.rows} rvwasm_cols=${term.cols}` : '';
+    emu = isLinuxImage(custom.kernel)
+      ? Emulator.new_linux(custom.kernel, custom.extra, 256, 'console=ttyS0 earlycon=sbi' + size, null)
+      : new Emulator(custom.kernel, custom.extra, 128);
+  } else if (image === 'linux') {
     const [kernel, initrd] = await Promise.all([
       fetchBytes('images/linux-Image'),
       fetchBytes('images/linux-initramfs.cpio.gz'),
@@ -216,7 +224,7 @@ onmessage = async (ev) => {
   try {
     switch (m.type) {
       case 'boot':
-        await boot(m.image, m.term, !!m.freshDisk);
+        await boot(m.image, m.term, !!m.freshDisk, m.image === 'custom' ? { kernel: m.kernel, extra: m.extra } : null);
         break;
       case 'disk-download':
         if (emu) {
