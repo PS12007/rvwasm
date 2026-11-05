@@ -140,12 +140,10 @@ impl Trace {
             let _ = write!(s, "[{},\"{:x}\",\"{:08x}\",{}]", r.cycle, r.pc, r.inst, r.prv);
         }
         s.push_str("],\"events\":[");
-        let mut n = 0;
-        for e in self.events().iter().filter(|e| e.cycle >= first) {
+        for (n, e) in self.events().iter().filter(|e| e.cycle >= first).enumerate() {
             if n > 0 {
                 s.push(',');
             }
-            n += 1;
             let kind = match e.kind {
                 EventKind::Exception => "exception",
                 EventKind::Interrupt => "interrupt",

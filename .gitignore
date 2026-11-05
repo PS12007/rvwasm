@@ -4,3 +4,4 @@
 /web/images
 node_modules
 *.img
+/web/sample-trace.json

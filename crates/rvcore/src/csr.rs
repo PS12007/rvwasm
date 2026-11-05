@@ -73,8 +73,7 @@ pub const MSTATUS_WMASK: u64 = MSTATUS_SIE
     | MSTATUS_TVM
     | MSTATUS_TW
     | MSTATUS_TSR;
-pub const SSTATUS_MASK: u64 =
-    MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL;
+pub const SSTATUS_MASK: u64 = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL;
 
 // interrupt bits (mip / mie)
 pub const IRQ_SSI: u64 = 1;
@@ -96,12 +95,17 @@ pub const MENVCFG_STCE: u64 = 1 << 63;
 pub const MENVCFG_ADUE: u64 = 1 << 61;
 
 /// misa: RV64 (MXL=2) with I, M, A, S, U.
-pub const MISA_VALUE: u64 = (2 << 62)
-    | (1 << (b'I' - b'A'))
-    | (1 << (b'M' - b'A'))
-    | (1 << (b'A' - b'A'))
-    | (1 << (b'S' - b'A'))
-    | (1 << (b'U' - b'A'));
+pub const MISA_VALUE: u64 = (2 << 62) | misa_bits(b"IMASU");
+
+const fn misa_bits(exts: &[u8]) -> u64 {
+    let mut v = 0;
+    let mut i = 0;
+    while i < exts.len() {
+        v |= 1 << (exts[i] - b'A');
+        i += 1;
+    }
+    v
+}
 
 /// Human-readable CSR names for the debugger panel and trace viewer.
 pub fn name(addr: u16) -> Option<&'static str> {

@@ -72,7 +72,7 @@ fn div(a: u64, b: u64) -> u64 {
     }
 }
 fn divu(a: u64, b: u64) -> u64 {
-    if b == 0 { u64::MAX } else { a / b }
+    a.checked_div(b).unwrap_or(u64::MAX)
 }
 fn rem(a: u64, b: u64) -> u64 {
     let (a, b) = (a as i64, b as i64);
@@ -83,7 +83,11 @@ fn rem(a: u64, b: u64) -> u64 {
     }
 }
 fn remu(a: u64, b: u64) -> u64 {
-    if b == 0 { a } else { a % b }
+    if b == 0 {
+        a
+    } else {
+        a % b
+    }
 }
 
 impl Cpu {
@@ -244,7 +248,7 @@ impl Cpu {
                         let (a, b) = (a32 as i32, b32 as i32);
                         (if b == 0 { -1 } else { a.wrapping_div(b) }) as i64 as u64
                     }
-                    (0x01, 5) => sext32((if b32 == 0 { u32::MAX } else { a32 / b32 }) as u64),
+                    (0x01, 5) => sext32(a32.checked_div(b32).unwrap_or(u32::MAX) as u64),
                     (0x01, 6) => {
                         let (a, b) = (a32 as i32, b32 as i32);
                         (if b == 0 { a } else { a.wrapping_rem(b) }) as i64 as u64
@@ -304,15 +308,27 @@ impl Cpu {
                 let old = sx(self.phys_rw(pa, size));
                 let s = sx(src);
                 let new = match op {
-                    0x01 => s,                    // AMOSWAP
-                    0x00 => old.wrapping_add(s),  // AMOADD
-                    0x04 => old ^ s,              // AMOXOR
-                    0x0c => old & s,              // AMOAND
-                    0x08 => old | s,              // AMOOR
+                    0x01 => s,                                 // AMOSWAP
+                    0x00 => old.wrapping_add(s),               // AMOADD
+                    0x04 => old ^ s,                           // AMOXOR
+                    0x0c => old & s,                           // AMOAND
+                    0x08 => old | s,                           // AMOOR
                     0x10 => (old as i64).min(s as i64) as u64, // AMOMIN
                     0x14 => (old as i64).max(s as i64) as u64, // AMOMAX
-                    0x18 => if size == 4 { (old as u32).min(s as u32) as u64 } else { old.min(s) }, // AMOMINU
-                    0x1c => if size == 4 { (old as u32).max(s as u32) as u64 } else { old.max(s) }, // AMOMAXU
+                    0x18 => {
+                        if size == 4 {
+                            (old as u32).min(s as u32) as u64
+                        } else {
+                            old.min(s)
+                        }
+                    } // AMOMINU
+                    0x1c => {
+                        if size == 4 {
+                            (old as u32).max(s as u32) as u64
+                        } else {
+                            old.max(s)
+                        }
+                    } // AMOMAXU
                     _ => return illegal(inst),
                 };
                 self.phys_store_atomic(pa, size, new);

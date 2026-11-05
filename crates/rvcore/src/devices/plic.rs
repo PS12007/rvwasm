@@ -64,12 +64,20 @@ impl Plic {
             0..=0xffc => self.priority.get((off / 4) as usize).copied().unwrap_or(0) as u64,
             0x1000..=0x107f => {
                 let w = (off - 0x1000) / 4;
-                if w < 2 { (self.pending >> (w * 32)) & 0xffff_ffff } else { 0 }
+                if w < 2 {
+                    (self.pending >> (w * 32)) & 0xffff_ffff
+                } else {
+                    0
+                }
             }
             0x2000..=0x1f_ffff => {
                 let ctx = ((off - 0x2000) / 0x80) as usize;
                 let w = ((off - 0x2000) % 0x80) / 4;
-                if ctx < NUM_CONTEXTS && w < 2 { (self.enable[ctx] >> (w * 32)) & 0xffff_ffff } else { 0 }
+                if ctx < NUM_CONTEXTS && w < 2 {
+                    (self.enable[ctx] >> (w * 32)) & 0xffff_ffff
+                } else {
+                    0
+                }
             }
             0x20_0000..=0x3ff_ffff => {
                 let ctx = ((off - 0x20_0000) / 0x1000) as usize;

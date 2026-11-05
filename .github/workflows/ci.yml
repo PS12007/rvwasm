@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt + clippy + unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --release -- -D warnings
+      - run: cargo test --workspace --release
+
+  riscv-tests:
+    name: riscv-tests (rv64ui/um/ua/si/mi, p + v)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install RISC-V toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build tests
+        run: make -f tests/riscv-tests.mk -j"$(nproc)"
+      - name: Build emulator
+        run: cargo build --release -p rvcli
+      - name: Run tests
+        run: ./target/release/rvwasm test build/riscv-tests/*
+
+  xv6:
+    name: xv6 boot + usertests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install RISC-V toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build xv6 (rv64ima)
+        run: ./scripts/build-xv6.sh
+      - name: Build emulator
+        run: cargo build --release -p rvcli
+      - name: Boot to shell
+        run: >
+          ./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img
+          --script 'echo booted-ok\n' --expect '$ booted-ok' --max-cycles 3000000000
+      - name: usertests -q
+        timeout-minutes: 30
+        run: >
+          ./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img
+          --script 'usertests -q\n' --expect 'ALL TESTS PASSED' --max-cycles 400000000000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xv6-images
+          path: |
+            build/xv6/kernel/kernel
+            build/xv6/fs.img
+
+  web:
+    name: WebAssembly build + benchmarks
+    needs: xv6
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install RISC-V toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-unknown-elf picolibc-riscv64-unknown-elf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: xv6-images
+          path: build/xv6
+      - name: Build benchmark programs
+        run: ./scripts/build-bench.sh
+      - name: Native benchmark
+        run: |
+          cargo build --release -p rvcli
+          ./target/release/rvwasm bench --json build/bench-native.json
+      - name: Build WebAssembly package and site
+        run: ./scripts/build-web.sh
+      - name: WebAssembly benchmark (Node)
+        run: node bench/wasm-bench.mjs --json build/bench-wasm.json
+      - name: Report
+        run: |
+          {
+            echo "## Native vs WebAssembly"
+            echo
+            echo "Same runner, same workloads; MIPS = million guest instructions per second."
+            echo
+            node bench/compare.mjs build/bench-native.json build/bench-wasm.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: build/bench-*.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [web, riscv-tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

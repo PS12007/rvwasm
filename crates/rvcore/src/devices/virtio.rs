@@ -98,7 +98,13 @@ impl VirtioBlk {
             0x008 => 2, // block device
             0x00c => VENDOR,
             0x010 => (self.device_features() >> (32 * (self.device_features_sel & 1))) as u32,
-            0x034 => if self.queue_sel == 0 { QUEUE_MAX } else { 0 },
+            0x034 => {
+                if self.queue_sel == 0 {
+                    QUEUE_MAX
+                } else {
+                    0
+                }
+            }
             0x038 => self.queue_num,
             0x044 => self.queue_ready as u32,
             0x060 => self.interrupt_status,
@@ -129,9 +135,21 @@ impl VirtioBlk {
             }
             0x024 => self.driver_features_sel = val,
             0x030 => self.queue_sel = val,
-            0x038 => if self.queue_sel == 0 { self.queue_num = val.min(QUEUE_MAX) },
-            0x044 => if self.queue_sel == 0 { self.queue_ready = val & 1 != 0 },
-            0x050 => if val == 0 { self.process_queue(ram) },
+            0x038 => {
+                if self.queue_sel == 0 {
+                    self.queue_num = val.min(QUEUE_MAX)
+                }
+            }
+            0x044 => {
+                if self.queue_sel == 0 {
+                    self.queue_ready = val & 1 != 0
+                }
+            }
+            0x050 => {
+                if val == 0 {
+                    self.process_queue(ram)
+                }
+            }
             0x064 => self.interrupt_status &= !val,
             0x070 => {
                 if val == 0 {

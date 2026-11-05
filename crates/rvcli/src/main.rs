@@ -19,6 +19,8 @@ fn usage() -> ExitCode {
   rvwasm test <elf>...
   rvwasm run <kernel.elf> [--disk FILE] [--ram MB] [--linux] [--initrd FILE]
              [--max-cycles N] [--trace N --trace-out FILE]
+             [--script TEXT --expect TEXT]   (non-interactive: type TEXT at the
+                                              first prompt, exit 0 once EXPECT is seen)
   rvwasm bench [--bench-dir DIR] [--xv6 DIR] [--reps N] [--json FILE]"
     );
     ExitCode::from(2)
@@ -61,7 +63,11 @@ fn cmd_test(files: &[String]) -> ExitCode {
         }
     }
     println!("\n{pass} passed, {fail} failed");
-    if fail == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if fail == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// Options shared by `run` and `bench`.
@@ -120,7 +126,13 @@ pub fn make_machine(o: &Opts) -> Result<Cpu, String> {
             Some(p) => Some(std::fs::read(p).map_err(|e| format!("{p}: {e}"))?),
             None => None,
         };
-        return rvcore::linux::build_linux_machine(o.ram_mb << 20, &kernel, initrd.as_deref(), disk, "console=ttyS0 earlycon=sbi");
+        return rvcore::linux::build_linux_machine(
+            o.ram_mb << 20,
+            &kernel,
+            initrd.as_deref(),
+            disk,
+            "console=ttyS0 earlycon=sbi",
+        );
     }
     build_machine(MachineConfig { ram_size: o.ram_mb << 20, kernel, disk })
 }
@@ -150,6 +162,10 @@ impl Drop for RawTerminal {
 
 fn cmd_run(args: &[String]) -> ExitCode {
     let Some(o) = parse_opts(args) else { return usage() };
+    let opt = |k: &str| o.rest.iter().find(|(n, _)| n == k).map(|(_, v)| v.replace("\\n", "\n"));
+    if let Some(expect) = opt("expect") {
+        return cmd_run_script(&o, &opt("script").unwrap_or_default(), &expect, opt("prompt").unwrap_or("$ ".into()));
+    }
     let mut cpu = match make_machine(&o) {
         Ok(c) => c,
         Err(e) => {
@@ -222,18 +238,71 @@ fn cmd_run(args: &[String]) -> ExitCode {
         cpu.instret as f64 / secs / 1e6,
         cpu.pc
     );
-    if let (true, Some(path)) = (o.trace > 0, &o.trace_out) {
-        let syms = std::fs::read(&o.kernel)
-            .ok()
-            .and_then(|b| rvcore::elf::Elf::parse(&b).ok().map(|e| function_symbols(&e)))
-            .unwrap_or_default();
-        if let Err(e) = std::fs::write(path, cpu.trace.to_json(&syms)) {
-            eprintln!("could not write trace: {e}");
-        } else {
-            eprintln!("[rvwasm] wrote trace of {} instructions to {path}", cpu.trace.instructions().len());
+    write_trace(&o, &cpu);
+    ExitCode::SUCCESS
+}
+
+fn write_trace(o: &Opts, cpu: &Cpu) {
+    let (true, Some(path)) = (o.trace > 0, &o.trace_out) else { return };
+    let syms = std::fs::read(&o.kernel)
+        .ok()
+        .and_then(|b| rvcore::elf::Elf::parse(&b).ok().map(|e| function_symbols(&e)))
+        .unwrap_or_default();
+    match std::fs::write(path, cpu.trace.to_json(&syms)) {
+        Err(e) => eprintln!("could not write trace: {e}"),
+        Ok(()) => eprintln!("[rvwasm] wrote trace of {} instructions to {path}", cpu.trace.instructions().len()),
+    }
+}
+
+/// Non-interactive run for CI: type `script` once `prompt` appears, stream the
+/// console to stdout, and succeed once `expect` is printed.
+fn cmd_run_script(o: &Opts, script: &str, expect: &str, prompt: String) -> ExitCode {
+    let mut cpu = match make_machine(o) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if o.trace > 0 {
+        cpu.trace.start(o.trace);
+    }
+    let start = Instant::now();
+    let mut stdout = std::io::stdout();
+    let mut seen: Vec<u8> = Vec::new();
+    let mut typed = script.is_empty();
+    let mut pending: std::collections::VecDeque<u8> = script.bytes().collect();
+    while cpu.cycle() < o.max_cycles && !cpu.halted {
+        cpu.run(1_000_000);
+        let out = cpu.bus.uart.take_output();
+        let _ = stdout.write_all(&out);
+        let _ = stdout.flush();
+        seen.extend(&out);
+        if !typed && seen.windows(prompt.len()).any(|w| w == prompt.as_bytes()) {
+            typed = true;
+        }
+        // Type at most a few bytes at a time so the guest's line buffer keeps up.
+        if typed && cpu.bus.uart.rx.len() < 8 {
+            let n = pending.len().min(32);
+            let chunk: Vec<u8> = pending.drain(..n).collect();
+            cpu.bus.uart.push_input(&chunk);
+        }
+        if seen.windows(expect.len()).any(|w| w == expect.as_bytes()) {
+            eprintln!(
+                "\n[rvwasm] saw {expect:?} after {} instructions ({:.1}s)",
+                cpu.instret,
+                start.elapsed().as_secs_f64()
+            );
+            write_trace(o, &cpu);
+            return ExitCode::SUCCESS;
+        }
+        // Keep the search window bounded.
+        if seen.len() > 1 << 16 {
+            seen.drain(..seen.len() - 4096);
         }
     }
-    ExitCode::SUCCESS
+    eprintln!("\n[rvwasm] did not see {expect:?} within {} cycles", cpu.cycle());
+    ExitCode::FAILURE
 }
 
 pub fn function_symbols(elf: &rvcore::elf::Elf) -> Vec<(String, u64)> {

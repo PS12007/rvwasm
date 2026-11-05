@@ -3,6 +3,9 @@
 //! The machine follows QEMU's `virt` layout closely enough to boot xv6-riscv
 //! unmodified (apart from building it without the C extension).
 
+// Bus errors carry no payload: the CPU turns them into access faults.
+#![allow(clippy::result_unit_err)]
+
 pub mod bench;
 pub mod bus;
 pub mod cpu;

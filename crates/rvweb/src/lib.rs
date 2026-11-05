@@ -31,12 +31,7 @@ impl Emulator {
     }
 
     /// Boot a Linux `Image` with the built-in SBI and an optional initramfs.
-    pub fn new_linux(
-        kernel: &[u8],
-        initrd: Option<Vec<u8>>,
-        ram_mb: u32,
-        cmdline: &str,
-    ) -> Result<Emulator, JsError> {
+    pub fn new_linux(kernel: &[u8], initrd: Option<Vec<u8>>, ram_mb: u32, cmdline: &str) -> Result<Emulator, JsError> {
         let cpu = rvcore::linux::build_linux_machine((ram_mb as usize) << 20, kernel, initrd.as_deref(), None, cmdline)
             .map_err(|e| JsError::new(&e))?;
         Ok(Emulator { cpu, symbols: Vec::new() })
@@ -131,7 +126,11 @@ impl Emulator {
             0 => String::new(),
             i => {
                 let (n, v) = &self.symbols[i - 1];
-                if addr - v < 0x10000 { format!("{}+{:#x}", n, addr - v) } else { String::new() }
+                if addr - v < 0x10000 {
+                    format!("{}+{:#x}", n, addr - v)
+                } else {
+                    String::new()
+                }
             }
         }
     }

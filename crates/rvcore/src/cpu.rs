@@ -434,10 +434,7 @@ impl Cpu {
                 true
             }
             SATP => !(self.prv == PRV_S && self.mstatus & MSTATUS_TVM != 0),
-            STIMECMP => {
-                self.prv == PRV_M
-                    || (self.menvcfg & MENVCFG_STCE != 0 && self.mcounteren & 2 != 0)
-            }
+            STIMECMP => self.prv == PRV_M || (self.menvcfg & MENVCFG_STCE != 0 && self.mcounteren & 2 != 0),
             _ => true,
         }
     }
@@ -521,7 +518,8 @@ impl Cpu {
             SATP => {
                 let mode = val >> 60;
                 if mode == 0 || mode == 8 {
-                    self.satp = val & ((0xf << 60) | (0xffff << 44) | ((1 << 44) - 1));
+                    // MODE, ASID and PPN cover all 64 bits.
+                    self.satp = val;
                     self.update_mmu();
                 }
             }
@@ -583,12 +581,9 @@ impl Cpu {
     /// Name and value of every CSR the UI shows.
     pub fn csr_dump(&mut self) -> Vec<(&'static str, u64)> {
         const SHOWN: [u16; 22] = [
-            MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MIP, MTVEC, MEPC, MCAUSE, MTVAL, MSCRATCH, MENVCFG,
-            SSTATUS, STVEC, SEPC, SCAUSE, STVAL, SSCRATCH, SATP, STIMECMP, TIME, INSTRET,
+            MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MIP, MTVEC, MEPC, MCAUSE, MTVAL, MSCRATCH, MENVCFG, SSTATUS, STVEC,
+            SEPC, SCAUSE, STVAL, SSCRATCH, SATP, STIMECMP, TIME, INSTRET,
         ];
-        SHOWN
-            .iter()
-            .map(|&a| (csr::name(a).unwrap_or("?"), self.csr_read(a).unwrap_or(0)))
-            .collect()
+        SHOWN.iter().map(|&a| (csr::name(a).unwrap_or("?"), self.csr_read(a).unwrap_or(0))).collect()
     }
 }

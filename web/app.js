@@ -215,7 +215,7 @@ $('trace-open').onclick = () => {
   const w = window.open('trace.html#from-opener', '_blank');
   const onReady = (ev) => {
     if (ev.source === w && ev.data === 'rvwasm-trace-ready') {
-      w.postMessage({ type: 'rvwasm-trace', json: lastTrace }, '*');
+      w.postMessage({ type: 'rvwasm-trace', json: lastTrace }, location.origin);
       window.removeEventListener('message', onReady);
     }
   };
