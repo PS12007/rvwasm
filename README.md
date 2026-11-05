@@ -8,7 +8,7 @@ a 16550 UART, CLINT, PLIC and a virtio-mmio block device.
 - Passes all **196** official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
   in the rv64ui, rv64um, rv64ua, rv64si and rv64mi suites (both `-p` and `-v` environments).
 - Boots **xv6-riscv** to an interactive shell and passes its full `usertests -q` suite.
-- Boots **Linux 6.12** to a userspace shell, using an SBI firmware implemented inside the emulator.
+- Boots **Linux 6.12 with a BusyBox userland**, using an SBI firmware implemented inside the emulator.
 - Web front end with an xterm.js terminal and a live panel: registers, current privilege
   mode, instructions per second, time spent per mode, disassembly around the PC, CSRs.
 - An instruction trace recorder with a timeline viewer.
@@ -24,7 +24,7 @@ a 16550 UART, CLINT, PLIC and a virtio-mmio block device.
 | `web/` | Static site: `index.html` (terminal + live panel), `trace.html` (timeline viewer), `bench.html` (in-browser benchmark) |
 | `third_party/` | Submodules: riscv-tests, xv6-riscv |
 | `tests/riscv-tests.mk` | Builds the ISA tests for rv64ima |
-| `linux/` | Kernel config fragment and the small `/init` shell |
+| `linux/` | Kernel config fragment, initramfs files (`rootfs/`), and a libc-free fallback `/init` (`init.c`) |
 | `scripts/` | Builds for xv6, Linux, benchmarks and the web bundle |
 | `bench/` | WebAssembly benchmark runner (Node) and report generator |
 
@@ -65,7 +65,8 @@ Press `Ctrl-A x` to quit.
 ### Linux
 
 ```bash
-./scripts/build-linux.sh      # shallow-clones v6.12 from github.com/torvalds/linux
+sudo apt-get install rsync libelf-dev   # in addition to the packages above
+./scripts/build-linux.sh
 ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
 ```
 
@@ -74,10 +75,14 @@ one hart). It boots straight into S-mode: `ecall`s from S-mode are handled by an
 implementation in `rvcore::linux` (base, timer, IPI, RFENCE, HSM, SRST, debug console),
 and the device tree is generated at boot. Boot to the shell takes about 48 million instructions.
 
-The initramfs currently contains `linux/init.c`, a tiny libc-free shell (`help`, `ls`,
-`cat`, `uname`, `mounts`, `mem`, `write`, ...). BusyBox needs a soft-float rv64ima libc
-(musl), which isn't packaged for this target, so it has to be built from source; that
-step is not in the build yet.
+Userspace is BusyBox 1.36.1 on musl 1.2.5, both built by the script. The target is
+soft-float (lp64) with no compressed instructions, which no distribution packages a libc
+for, so musl is compiled from source and linked against the `rv64im/lp64` libgcc and crt
+files from the bare-metal toolchain. Sources are shallow clones pinned to exact commits:
+Linux from github.com/torvalds/linux, musl and BusyBox from their GitHub mirrors
+(`kraj/musl`, `mirror/busybox`), since the upstream hosts may be unreachable from CI.
+Booting to the BusyBox shell takes about 100 million instructions. `BUSYBOX=0` builds a
+tiny libc-free shell (`linux/init.c`) instead.
 
 ### Web page
 

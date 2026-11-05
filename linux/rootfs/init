@@ -1,0 +1,11 @@
+#!/bin/sh
+# rvwasm initramfs /init (BusyBox)
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /tmp
+hostname -F /etc/hostname
+cat /etc/motd
+# cttyhack gives the shell a real controlling tty, so job control and Ctrl-C work.
+exec setsid cttyhack /bin/sh -l

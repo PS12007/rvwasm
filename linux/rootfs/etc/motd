@@ -1,0 +1,4 @@
+
+  Welcome to Linux on rvwasm: RV64IMA, emulated in Rust/WebAssembly.
+  BusyBox shell. Try: uname -a, cat /proc/cpuinfo, free, ps, top, vi, dmesg | tail
+

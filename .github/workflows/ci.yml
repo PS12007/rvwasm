@@ -73,23 +73,25 @@ jobs:
             build/xv6/fs.img
 
   linux:
-    name: Linux 6.12 boot
+    name: Linux 6.12 + BusyBox boot
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu flex bison bc libelf-dev libssl-dev
+        run: >
+          sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu gcc-riscv64-unknown-elf
+          flex bison bc libelf-dev libssl-dev rsync
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build kernel + initramfs
+      - name: Build kernel, musl, BusyBox and initramfs
         run: ./scripts/build-linux.sh
       - name: Build emulator
         run: cargo build --release -p rvcli
       - name: Boot and run commands
         run: >
           ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
-          --prompt "'help'." --script 'uname\nwrite /tmp/hi hello-from-linux\ncat /tmp/hi\n'
-          --expect '\nhello-from-linux' --max-cycles 8000000000
+          --prompt 'Try:' --script 'uname -a\nps\necho hello-busybox | sed s/hello/bye/\n'
+          --expect '\nbye-busybox' --max-cycles 20000000000
       - uses: actions/upload-artifact@v4
         with:
           name: linux-images

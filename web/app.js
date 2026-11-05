@@ -45,7 +45,7 @@ worker.onerror = (e) => term.write(`\r\n\x1b[31m[rvwasm] worker failed: ${e.mess
 
 const HINTS = {
   xv6: 'Try <code>ls</code>, <code>cat README</code>, <code>usertests -q</code>. Type into the terminal.',
-  linux: 'Linux boots in a few seconds. Try <code>help</code>, <code>uname</code>, <code>mounts</code>, <code>cat /proc/cpuinfo</code>.',
+  linux: 'Linux + BusyBox. Try <code>uname -a</code>, <code>cat /proc/cpuinfo</code>, <code>ps</code>, <code>top</code>, <code>vi</code>.',
 };
 
 function boot() {
