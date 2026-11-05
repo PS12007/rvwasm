@@ -10,3 +10,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 rvcore = { path = "../rvcore" }
 wasm-bindgen = "0.2"
+
+# wasm-pack would download its own wasm-opt; scripts/build-web.sh runs the
+# system one instead so builds work offline.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

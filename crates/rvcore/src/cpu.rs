@@ -110,6 +110,8 @@ pub struct Cpu {
     pub sbi: Option<SbiHandler>,
     /// Count of traps taken, for stats.
     pub traps_taken: u64,
+    /// Instructions executed in each privilege mode (indexed by U=0, S=1, M=3).
+    pub prv_instret: [u64; 4],
     pub halted: bool,
 }
 
@@ -161,6 +163,7 @@ impl Cpu {
             trace: Trace::default(),
             sbi: None,
             traps_taken: 0,
+            prv_instret: [0; 4],
             halted: false,
         };
         cpu.update_mmu();
@@ -195,8 +198,12 @@ impl Cpu {
         self.cycle() - start
     }
 
+    /// Run up to `n` instructions. Chunks end at any trap or xRET, so every
+    /// instruction in a chunk ran at the privilege level it started with.
     #[inline(always)]
     fn exec_chunk<const TRACE: bool>(&mut self, n: u64) {
+        let prv = self.prv;
+        let start = self.instret;
         for _ in 0..n {
             self.step::<TRACE>();
             if self.break_loop | self.bus.mmio_dirty {
@@ -205,6 +212,7 @@ impl Cpu {
                 break;
             }
         }
+        self.prv_instret[prv as usize & 3] += self.instret - start;
     }
 
     /// Execute exactly one instruction (or take one exception).
@@ -356,6 +364,7 @@ impl Cpu {
             self.prv = PRV_M;
         }
         self.wfi = false;
+        self.break_loop = true;
         self.update_mmu();
         if self.trace.enabled {
             self.trace.record_trap(self.cycle(), cause, epc, tval, from, self.prv);

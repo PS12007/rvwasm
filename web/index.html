@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rvwasm</title>
+  <meta name="description" content="A RISC-V RV64IMA emulator in Rust + WebAssembly, booting xv6 in your browser.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">rv</span><span>rvwasm</span>
+      <span class="tag">RV64IMA · Sv39 · WebAssembly</span>
+    </div>
+    <div class="controls">
+      <label class="select">
+        <span>Guest</span>
+        <select id="image">
+          <option value="xv6">xv6-riscv</option>
+          <option value="linux" disabled>Linux + BusyBox</option>
+        </select>
+      </label>
+      <button id="reset" title="Reboot the guest">Reboot</button>
+      <button id="pause" title="Pause / resume">Pause</button>
+      <button id="step" title="Execute one instruction (pauses)">Step</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="term-wrap">
+      <div id="terminal"></div>
+      <div class="hint">Try <code>ls</code>, <code>cat README</code>, <code>usertests -q</code>. Type into the terminal.</div>
+    </section>
+
+    <aside class="panel">
+      <div class="card status">
+        <div class="row">
+          <div>
+            <div class="label">Instructions / sec</div>
+            <div class="big" id="ips">—</div>
+          </div>
+          <div class="mode-wrap">
+            <div class="label">Privilege</div>
+            <div class="mode" id="mode">—</div>
+          </div>
+        </div>
+        <canvas id="spark" height="44"></canvas>
+        <div class="kv">
+          <span>state</span><b id="state">booting</b>
+          <span>host load</span><b id="load">—</b>
+          <span>retired</span><b id="instret">—</b>
+          <span>uptime</span><b id="uptime">—</b>
+          <span>traps</span><b id="traps">—</b>
+          <span>disk req</span><b id="disk">—</b>
+        </div>
+        <div class="label" style="margin-top:10px">Time in mode</div>
+        <div class="share" id="share">
+          <div class="u" style="width:0"></div><div class="s" style="width:0"></div><div class="m" style="width:0"></div>
+        </div>
+        <div class="legend"><span class="u">U <b id="pu">0%</b></span><span class="s">S <b id="ps">0%</b></span><span class="m">M <b id="pm">0%</b></span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">pc <code id="pc">—</code></div>
+        <pre id="disasm" class="disasm"></pre>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Registers</div>
+        <div id="regs" class="regs"></div>
+      </div>
+
+      <details class="card">
+        <summary class="card-title">CSRs</summary>
+        <div id="csrs" class="regs csrs"></div>
+      </details>
+
+      <div class="card">
+        <div class="card-title">Instruction trace</div>
+        <div class="trace-row">
+          <label>Capacity
+            <select id="trace-cap">
+              <option value="50000">50k</option>
+              <option value="200000" selected>200k</option>
+              <option value="1000000">1M</option>
+            </select>
+          </label>
+          <button id="trace-btn">Record</button>
+        </div>
+        <div class="trace-row small" id="trace-status">Records the most recent instructions and traps into a ring buffer.</div>
+        <div class="trace-row">
+          <button id="trace-open" disabled>Open timeline</button>
+          <button id="trace-dl" disabled>Download JSON</button>
+        </div>
+      </div>
+      <div class="foot"><a href="trace.html">Timeline viewer</a> · <a href="bench.html">Benchmark</a> · <a href="https://github.com/PS12007/rvwasm">Source</a></div>
+    </aside>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
