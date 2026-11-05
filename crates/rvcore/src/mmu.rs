@@ -31,15 +31,25 @@ struct Entry {
 pub struct Tlb {
     tables: Box<[[Entry; TLB_SIZE]; 3]>,
     gen: u64,
+    /// One-entry cache for instruction fetch: the virtual page the PC is in
+    /// and that page's byte offset in RAM. u64::MAX when invalid.
+    fetch_vpage: u64,
+    fetch_ram_off: usize,
 }
 
 impl Tlb {
     pub fn new() -> Self {
-        Tlb { tables: Box::new([[Entry { vpn: 0, gen: 0, ppage: 0 }; TLB_SIZE]; 3]), gen: 1 }
+        Tlb {
+            tables: Box::new([[Entry { vpn: 0, gen: 0, ppage: 0 }; TLB_SIZE]; 3]),
+            gen: 1,
+            fetch_vpage: u64::MAX,
+            fetch_ram_off: 0,
+        }
     }
     #[inline]
     pub fn flush(&mut self) {
         self.gen += 1;
+        self.fetch_vpage = u64::MAX;
     }
 }
 
@@ -186,7 +196,25 @@ impl Cpu {
 
     #[inline(always)]
     pub(crate) fn fetch(&mut self, pc: u64) -> Result<u32, Trap> {
+        // Fast path: still in the page of the previous fetch, which is in RAM.
+        // pc is 4-byte aligned, so the word never crosses the page.
+        if pc >> 12 == self.tlb.fetch_vpage {
+            let o = self.tlb.fetch_ram_off + (pc & 0xfff) as usize;
+            if let Some(b) = self.bus.ram.get(o..o + 4) {
+                return Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+            }
+        }
+        self.fetch_slow(pc)
+    }
+
+    #[inline(never)]
+    fn fetch_slow(&mut self, pc: u64) -> Result<u32, Trap> {
         let pa = self.translate(pc, Access::Fetch)?;
+        let off = (pa & !0xfff).wrapping_sub(RAM_BASE);
+        if off < self.bus.ram.len() as u64 {
+            self.tlb.fetch_vpage = pc >> 12;
+            self.tlb.fetch_ram_off = off as usize;
+        }
         match self.bus.read(pa, 4) {
             Ok(v) => Ok(v as u32),
             Err(_) => Err(Trap::new(cause::INST_ACCESS, pc)),
