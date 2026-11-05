@@ -23,7 +23,8 @@ else
 fi
 mkdir -p "$ROOT/web/images"
 for f in build/xv6/kernel/kernel:xv6-kernel build/xv6/fs.img:xv6-fs.img \
-         build/linux/Image:linux-Image build/linux/initramfs.cpio.gz:linux-initramfs.cpio.gz; do
+         build/linux/Image:linux-Image build/linux/initramfs.cpio.gz:linux-initramfs.cpio.gz \
+         build/linux/System.map:linux-System.map; do
   src="$ROOT/${f%%:*}"; dst="$ROOT/web/images/${f##*:}"
   if [ -f "$src" ]; then cp "$src" "$dst"; echo "staged $dst"; fi
 done

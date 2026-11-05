@@ -56,7 +56,7 @@ function boot() {
   term.reset();
   term.write(`\x1b[90m[rvwasm] booting ${currentImage}…\x1b[0m\r\n`);
   setPaused(false);
-  worker.postMessage({ type: 'boot', image: currentImage });
+  worker.postMessage({ type: 'boot', image: currentImage, term: { rows: term.rows, cols: term.cols } });
 }
 
 // Offer Linux only if its images were deployed.

@@ -31,10 +31,32 @@ impl Emulator {
     }
 
     /// Boot a Linux `Image` with the built-in SBI and an optional initramfs.
-    pub fn new_linux(kernel: &[u8], initrd: Option<Vec<u8>>, ram_mb: u32, cmdline: &str) -> Result<Emulator, JsError> {
+    ///
+    /// `system_map` is the kernel's System.map text (optional), used to label
+    /// addresses in the debug panel and traces.
+    pub fn new_linux(
+        kernel: &[u8],
+        initrd: Option<Vec<u8>>,
+        ram_mb: u32,
+        cmdline: &str,
+        system_map: Option<String>,
+    ) -> Result<Emulator, JsError> {
         let cpu = rvcore::linux::build_linux_machine((ram_mb as usize) << 20, kernel, initrd.as_deref(), None, cmdline)
             .map_err(|e| JsError::new(&e))?;
-        Ok(Emulator { cpu, symbols: Vec::new() })
+        let mut symbols: Vec<(String, u64)> = system_map
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .filter_map(|l| {
+                let mut it = l.split_whitespace();
+                let addr = u64::from_str_radix(it.next()?, 16).ok()?;
+                let kind = it.next()?;
+                let name = it.next()?;
+                matches!(kind, "t" | "T" | "W" | "w").then(|| (name.to_string(), addr))
+            })
+            .collect();
+        symbols.sort_by_key(|(_, v)| *v);
+        Ok(Emulator { cpu, symbols })
     }
 
     /// Run for up to `cycles` cycles; returns cycles consumed.

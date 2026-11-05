@@ -98,6 +98,7 @@ jobs:
           path: |
             build/linux/Image
             build/linux/initramfs.cpio.gz
+            build/linux/System.map
 
   web:
     name: WebAssembly build + benchmarks

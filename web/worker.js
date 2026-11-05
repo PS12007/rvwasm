@@ -30,7 +30,7 @@ async function fetchBytes(url) {
   return new Uint8Array(await r.arrayBuffer());
 }
 
-async function boot(image) {
+async function boot(image, term) {
   await wasmReady;
   emu?.free();
   emu = null;
@@ -42,7 +42,12 @@ async function boot(image) {
       fetchBytes('images/linux-Image'),
       fetchBytes('images/linux-initramfs.cpio.gz'),
     ]);
-    emu = Emulator.new_linux(kernel, initrd, 256, 'console=ttyS0 earlycon=sbi');
+    // System.map is optional: it only labels kernel addresses in the panel.
+    const map = await fetch('images/linux-System.map').then((r) => (r.ok ? r.text() : null)).catch(() => null);
+    // Unknown key=value boot parameters reach /init as environment variables;
+    // /etc/profile uses these to set the tty size.
+    const size = term ? ` rvwasm_rows=${term.rows} rvwasm_cols=${term.cols}` : '';
+    emu = Emulator.new_linux(kernel, initrd, 256, 'console=ttyS0 earlycon=sbi' + size, map);
   } else {
     const [kernel, disk] = await Promise.all([
       fetchBytes('images/xv6-kernel'),
@@ -149,7 +154,7 @@ onmessage = async (ev) => {
   try {
     switch (m.type) {
       case 'boot':
-        await boot(m.image);
+        await boot(m.image, m.term);
         break;
       case 'input':
         emu?.push_input(m.data);

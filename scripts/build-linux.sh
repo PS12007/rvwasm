@@ -53,6 +53,7 @@ kmake -s tinyconfig
 kmake -s olddefconfig
 kmake -j"$JOBS" Image
 cp "$OBJ/arch/riscv/boot/Image" "$OUT/Image"
+cp "$OBJ/System.map" "$OUT/System.map"
 
 LIST="$OUT/initramfs.list"
 cat > "$LIST" <<EOF

@@ -2,3 +2,7 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root TERM=xterm
 PS1='\[\033[32m\]\u@\h\[\033[0m\]:\w# '
 cd "$HOME"
+# The web page passes the terminal size on the kernel command line.
+if [ -n "$rvwasm_rows" ] && [ -n "$rvwasm_cols" ]; then
+  stty rows "$rvwasm_rows" cols "$rvwasm_cols" 2>/dev/null
+fi
