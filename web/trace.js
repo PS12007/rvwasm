@@ -132,24 +132,35 @@ function draw() {
   const span = view[1] - view[0];
   const rgb = { 0: [76, 195, 138], 1: [240, 180, 76], 3: [239, 111, 108] };
   const step = Math.max(1, Math.floor(span / (W * 64))); // subsample huge ranges
-  const colMode = new Int8Array(W).fill(-1);
+  const colCount = new Uint32Array(W * 4); // instructions per mode per column
   for (let i = view[0]; i < view[1]; i += step) {
     const x = Math.floor(((i - view[0]) / span) * W);
     if (x < 0 || x >= W) continue;
     const p = T.prv[i];
-    if (colMode[x] < p) colMode[x] = p; // most privileged mode wins the column
+    colCount[x * 4 + p]++;
     const y = Math.round(pcBot - T.rank[T.pcIdx[i]] * (pcBot - pcTop));
     const o = (y * W + x) * 4;
     const c = rgb[p];
     px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
   }
+  // Privilege band: each column is stacked by the share of U, S and M
+  // instructions in it (U at the bottom). Any mode present gets at least one
+  // device pixel, so brief visits to a mode stay visible when zoomed out.
+  const bandH = modeBot - modeTop;
   for (let x = 0; x < W; x++) {
-    const p = colMode[x];
-    if (p < 0) continue;
-    const c = rgb[p];
-    for (let y = modeTop; y < modeBot; y++) {
-      const o = (y * W + x) * 4;
-      px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+    const n = colCount[x * 4] + colCount[x * 4 + 1] + colCount[x * 4 + 3];
+    if (!n) continue;
+    let y = modeBot;
+    for (const p of [0, 1, 3]) {
+      const k = colCount[x * 4 + p];
+      if (!k) continue;
+      const h = Math.max(1, Math.round((k / n) * bandH));
+      const c = rgb[p];
+      for (let yy = Math.max(modeTop, y - h); yy < y; yy++) {
+        const o = (yy * W + x) * 4;
+        px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+      }
+      y -= h;
     }
   }
   ctx.putImageData(img, 0, 0);
