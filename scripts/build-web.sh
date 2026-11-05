@@ -5,12 +5,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/crates/rvweb"
 wasm-pack build --release --target web --out-dir "$ROOT/web/pkg" --no-typescript
 rm -f "$ROOT/web/pkg/.gitignore" "$ROOT/web/pkg/package.json" "$ROOT/web/pkg/README.md"
-# Older wasm-opt releases (< 116) corrupt wasm-bindgen's reference-type
-# tables, so only optimise with a recent one.
+# wasm-opt shrinks the module by ~17% (it does not measurably change speed).
+# Releases older than 116 corrupt wasm-bindgen's reference-type tables, so use
+# the system binary only if it is new enough, else binaryen from npm if npx works.
+WASM_OPT_BIN=""
 WASM_OPT_VER=$(wasm-opt --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
-if [ "${WASM_OPT:-1}" = 1 ] && [ "${WASM_OPT_VER:-0}" -ge 116 ]; then
-  wasm-opt -O3 --all-features \
-    "$ROOT/web/pkg/rvweb_bg.wasm" -o "$ROOT/web/pkg/rvweb_bg.wasm"
+if [ "${WASM_OPT_VER:-0}" -ge 116 ]; then
+  WASM_OPT_BIN="wasm-opt"
+elif command -v npx >/dev/null && npx --yes -p binaryen@123.0.0 wasm-opt --version >/dev/null 2>&1; then
+  WASM_OPT_BIN="npx --yes -p binaryen@123.0.0 wasm-opt"
+fi
+if [ "${WASM_OPT:-1}" = 1 ] && [ -n "$WASM_OPT_BIN" ]; then
+  $WASM_OPT_BIN -O3 --all-features "$ROOT/web/pkg/rvweb_bg.wasm" -o "$ROOT/web/pkg/rvweb_bg.wasm.opt" &&
+    mv "$ROOT/web/pkg/rvweb_bg.wasm.opt" "$ROOT/web/pkg/rvweb_bg.wasm"
+else
+  echo "note: skipping wasm-opt (none >= 116 available)"
 fi
 mkdir -p "$ROOT/web/images"
 for f in build/xv6/kernel/kernel:xv6-kernel build/xv6/fs.img:xv6-fs.img \
