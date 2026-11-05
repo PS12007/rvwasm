@@ -58,7 +58,7 @@ jobs:
       - name: Boot to shell
         run: >
           ./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img
-          --script 'echo booted-ok\n' --expect '$ booted-ok' --max-cycles 3000000000
+          --script 'echo booted-ok\n' --expect '\nbooted-ok' --max-cycles 3000000000
       - name: usertests -q
         timeout-minutes: 30
         run: >
@@ -71,9 +71,34 @@ jobs:
             build/xv6/kernel/kernel
             build/xv6/fs.img
 
+  linux:
+    name: Linux 6.12 boot
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-riscv64-linux-gnu flex bison bc libelf-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build kernel + initramfs
+        run: ./scripts/build-linux.sh
+      - name: Build emulator
+        run: cargo build --release -p rvcli
+      - name: Boot and run commands
+        run: >
+          ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
+          --prompt "'help'." --script 'uname\nwrite /tmp/hi hello-from-linux\ncat /tmp/hi\n'
+          --expect '\nhello-from-linux' --max-cycles 8000000000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-images
+          path: |
+            build/linux/Image
+            build/linux/initramfs.cpio.gz
+
   web:
     name: WebAssembly build + benchmarks
-    needs: xv6
+    needs: [xv6, linux]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -95,6 +120,10 @@ jobs:
         with:
           name: xv6-images
           path: build/xv6
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-images
+          path: build/linux
       - name: Build benchmark programs
         run: ./scripts/build-bench.sh
       - name: Native benchmark

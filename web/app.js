@@ -43,7 +43,14 @@ worker.onmessage = (ev) => {
 };
 worker.onerror = (e) => term.write(`\r\n\x1b[31m[rvwasm] worker failed: ${e.message}\x1b[0m\r\n`);
 
+const HINTS = {
+  xv6: 'Try <code>ls</code>, <code>cat README</code>, <code>usertests -q</code>. Type into the terminal.',
+  linux: 'Linux boots in a few seconds. Try <code>help</code>, <code>uname</code>, <code>mounts</code>, <code>cat /proc/cpuinfo</code>.',
+};
+
 function boot() {
+  document.querySelector('.hint').innerHTML = HINTS[currentImage] || '';
+  history.replaceState(null, '', currentImage === 'xv6' ? location.pathname : `?guest=${currentImage}`);
   prevPriv = [];
   privShare = [0, 0, 0];
   term.reset();

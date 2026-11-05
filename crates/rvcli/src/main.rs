@@ -230,6 +230,9 @@ fn cmd_run(args: &[String]) -> ExitCode {
         }
     }
     drop(_raw);
+    if let Some(r) = &cpu.halt_reason {
+        eprintln!("\r\n[rvwasm] halted: {r}");
+    }
     let secs = start.elapsed().as_secs_f64();
     eprintln!(
         "\r\n[rvwasm] {} instructions in {:.2}s ({:.1} MIPS), pc={:#x}",

@@ -113,6 +113,7 @@ pub struct Cpu {
     /// Instructions executed in each privilege mode (indexed by U=0, S=1, M=3).
     pub prv_instret: [u64; 4],
     pub halted: bool,
+    pub halt_reason: Option<String>,
 }
 
 impl Cpu {
@@ -165,9 +166,20 @@ impl Cpu {
             traps_taken: 0,
             prv_instret: [0; 4],
             halted: false,
+            halt_reason: None,
         };
         cpu.update_mmu();
         cpu
+    }
+
+    /// Leave the inner execution loop after the current instruction.
+    pub fn break_now(&mut self) {
+        self.break_loop = true;
+    }
+
+    /// Invalidate all cached address translations.
+    pub fn flush_tlb(&mut self) {
+        self.tlb.flush();
     }
 
     #[inline]
@@ -334,6 +346,15 @@ impl Cpu {
             && if interrupt { (self.mideleg >> code) & 1 != 0 } else { (self.medeleg >> code) & 1 != 0 };
         let from = self.prv;
         self.traps_taken += 1;
+        if !deleg && self.sbi.is_some() {
+            // No M-mode firmware is loaded when the SBI is emulated.
+            self.halt_reason = Some(format!(
+                "unhandled trap to M-mode: cause={cause:#x} epc={epc:#x} tval={tval:#x} prv={}",
+                self.prv
+            ));
+            self.halted = true;
+            return;
+        }
         if deleg {
             self.scause = cause;
             self.sepc = epc;

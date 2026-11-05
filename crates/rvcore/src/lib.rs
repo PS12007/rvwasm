@@ -14,6 +14,7 @@ pub mod devices;
 pub mod disasm;
 pub mod elf;
 mod exec;
+pub mod fdt;
 pub mod linux;
 pub mod mmu;
 pub mod trace;
