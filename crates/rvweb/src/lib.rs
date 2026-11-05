@@ -177,6 +177,11 @@ impl Emulator {
         self.cpu.trace.to_json(&self.symbols)
     }
 
+    /// Write requests the guest has sent to the disk so far.
+    pub fn disk_writes(&self) -> f64 {
+        self.cpu.bus.virtio.as_ref().map(|v| v.writes as f64).unwrap_or(0.0)
+    }
+
     /// Snapshot of the disk image (to let users download a modified fs.img).
     pub fn disk_image(&self) -> Vec<u8> {
         self.cpu.bus.virtio.as_ref().map(|v| v.disk.clone()).unwrap_or_default()

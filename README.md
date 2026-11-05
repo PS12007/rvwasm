@@ -113,6 +113,8 @@ compressed or floating-point instruction ends up in the output.
 - `crates/rvweb` is the wasm-bindgen wrapper the page talks to.
 - `web/` is the site. The emulator runs in a Web Worker so typing stays responsive, and
   when the guest is idle in `wfi` it stops burning CPU and lets guest time follow the clock.
+  xv6's disk is saved in the browser a couple of seconds after the guest stops writing, so
+  files are still there after a reload (the Disk panel can download or reset it).
 
 A few choices that made it fast enough. Instructions run in chunks that stop at any trap,
 return or device write, which is when interrupts get rechecked; between those points nothing
@@ -127,7 +129,6 @@ the same result every time.
 - No compressed (C) or floating-point (F/D) instructions, so stock rv64gc binaries won't run.
 - One hart only.
 - No snapshots: a reload boots from scratch.
-- The disk lives in memory; changes vanish when you close the tab.
 
 ## License
 

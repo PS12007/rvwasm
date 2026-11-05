@@ -30,7 +30,62 @@ async function fetchBytes(url) {
   return new Uint8Array(await r.arrayBuffer());
 }
 
-async function boot(image, term) {
+// ------------------------------------------------------------ saved disk
+// xv6's disk is kept in this browser's IndexedDB so files survive a reload.
+// Saves happen once the guest has stopped writing for a couple of seconds.
+const DISK_KEY = 'xv6-fs.img';
+let diskWrites = 0;
+let diskDirtyAt = 0;
+let diskSavedAt = null;
+
+function idb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('rvwasm', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('disks');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbOp(mode, fn) {
+  const db = await idb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('disks', mode);
+    const req = fn(tx.objectStore('disks'));
+    tx.oncomplete = () => { db.close(); resolve(req.result); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  });
+}
+const loadDisk = () => idbOp('readonly', (s) => s.get(DISK_KEY)).catch(() => undefined);
+const storeDisk = (bytes) => idbOp('readwrite', (s) => s.put({ bytes, savedAt: Date.now() }, DISK_KEY));
+const forgetDisk = () => idbOp('readwrite', (s) => s.delete(DISK_KEY)).catch(() => {});
+
+function diskStatus(extra = {}) {
+  postMessage({ type: 'disk', savedAt: diskSavedAt, ...extra });
+}
+
+async function maybeSaveDisk(now) {
+  if (!emu || currentImage !== 'xv6') return;
+  const w = emu.disk_writes();
+  if (w !== diskWrites) { diskWrites = w; diskDirtyAt = now; return; }
+  if (diskDirtyAt && now - diskDirtyAt > 2000) {
+    diskDirtyAt = 0;
+    try {
+      await storeDisk(emu.disk_image());
+      diskSavedAt = Date.now();
+      diskStatus();
+    } catch (e) {
+      diskStatus({ error: 'Could not save the disk in this browser.' });
+    }
+  }
+}
+
+let currentImage = null;
+
+async function boot(image, term, freshDisk = false) {
+  currentImage = image;
+  diskWrites = 0;
+  diskDirtyAt = 0;
+  diskSavedAt = null;
   await wasmReady;
   emu?.free();
   emu = null;
@@ -49,11 +104,15 @@ async function boot(image, term) {
     const size = term ? ` rvwasm_rows=${term.rows} rvwasm_cols=${term.cols}` : '';
     emu = Emulator.new_linux(kernel, initrd, 256, 'console=ttyS0 earlycon=sbi' + size, map);
   } else {
+    if (freshDisk) await forgetDisk();
+    const saved = freshDisk ? undefined : await loadDisk();
     const [kernel, disk] = await Promise.all([
       fetchBytes('images/xv6-kernel'),
-      fetchBytes('images/xv6-fs.img'),
+      saved ? Promise.resolve(saved.bytes) : fetchBytes('images/xv6-fs.img'),
     ]);
+    diskSavedAt = saved ? saved.savedAt : null;
     emu = new Emulator(kernel, disk, 128);
+    diskStatus({ restored: !!saved });
   }
   startTime = performance.now();
   lastLoop = lastStats = startTime;
@@ -107,7 +166,10 @@ function loop() {
   busyMs += busy;
   flushOutput();
   const now = performance.now();
-  if (now - lastStats >= STATS_MS) sendStats(now);
+  if (now - lastStats >= STATS_MS) {
+    sendStats(now);
+    maybeSaveDisk(now);
+  }
   if (emu.halted()) {
     sendStats(now);
     postMessage({ type: 'status', text: 'Guest halted.' });
@@ -154,7 +216,13 @@ onmessage = async (ev) => {
   try {
     switch (m.type) {
       case 'boot':
-        await boot(m.image, m.term);
+        await boot(m.image, m.term, !!m.freshDisk);
+        break;
+      case 'disk-download':
+        if (emu) {
+          const bytes = emu.disk_image();
+          postMessage({ type: 'disk-file', bytes }, [bytes.buffer]);
+        }
         break;
       case 'input':
         emu?.push_input(m.data);

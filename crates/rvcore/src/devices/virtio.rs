@@ -42,6 +42,8 @@ pub struct VirtioBlk {
     status: u32,
     /// Number of requests serviced, exposed for stats.
     pub requests: u64,
+    /// Number of write requests serviced (lets the host tell when to save the disk).
+    pub writes: u64,
 }
 
 /// Bounds-checked guest physical memory accessors over the RAM slice.
@@ -87,8 +89,8 @@ impl VirtioBlk {
 
     fn reset(&mut self) {
         let disk = std::mem::take(&mut self.disk);
-        let requests = self.requests;
-        *self = VirtioBlk { disk, requests, ..Default::default() };
+        let (requests, writes) = (self.requests, self.writes);
+        *self = VirtioBlk { disk, requests, writes, ..Default::default() };
     }
 
     pub fn read(&self, off: u64) -> u32 {
@@ -235,6 +237,7 @@ impl VirtioBlk {
                 }
             }
             BLK_T_OUT => {
+                self.writes += 1;
                 for &(addr, len, _) in data {
                     let (start, end) = (pos as usize, (pos + len as u64) as usize);
                     if end > self.disk.len() {

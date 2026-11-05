@@ -39,6 +39,8 @@ worker.onmessage = (ev) => {
       $('state').textContent = 'error';
       break;
     case 'trace': onTrace(m.json); break;
+    case 'disk': onDisk(m); break;
+    case 'disk-file': saveFile(new Blob([m.bytes]), 'fs.img'); break;
   }
 };
 worker.onerror = (e) => term.write(`\r\n\x1b[31m[rvwasm] worker failed: ${e.message}\x1b[0m\r\n`);
@@ -48,7 +50,8 @@ const HINTS = {
   linux: 'Linux + BusyBox. Try <code>uname -a</code>, <code>cat /proc/cpuinfo</code>, <code>ps</code>, <code>top</code>, <code>vi</code>.',
 };
 
-function boot() {
+function boot(freshDisk = false) {
+  $('disk-card').hidden = currentImage !== 'xv6';
   document.querySelector('.hint').innerHTML = HINTS[currentImage] || '';
   history.replaceState(null, '', currentImage === 'xv6' ? location.pathname : `?guest=${currentImage}`);
   prevPriv = [];
@@ -56,7 +59,7 @@ function boot() {
   term.reset();
   term.write(`\x1b[90m[rvwasm] booting ${currentImage}…\x1b[0m\r\n`);
   setPaused(false);
-  worker.postMessage({ type: 'boot', image: currentImage, term: { rows: term.rows, cols: term.cols } });
+  worker.postMessage({ type: 'boot', image: currentImage, freshDisk, term: { rows: term.rows, cols: term.cols } });
 }
 
 // Offer Linux only if its images were deployed.
@@ -67,7 +70,7 @@ fetch('images/linux-Image', { method: 'HEAD' }).then((r) => {
 }).catch(() => {});
 $('image').value = currentImage;
 $('image').onchange = () => { currentImage = $('image').value; boot(); };
-$('reset').onclick = boot;
+$('reset').onclick = () => boot();
 $('pause').onclick = () => setPaused(!paused);
 $('step').onclick = () => { setPaused(true, false); worker.postMessage({ type: 'step', count: 1 }); };
 
@@ -210,13 +213,28 @@ function onTrace(json) {
   $('trace-dl').disabled = false;
 }
 
-$('trace-dl').onclick = () => {
+function saveFile(blob, name) {
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([lastTrace], { type: 'application/json' }));
-  a.download = `rvwasm-trace-${Date.now()}.json`;
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
+}
+
+$('trace-dl').onclick = () => saveFile(new Blob([lastTrace], { type: 'application/json' }), `rvwasm-trace-${Date.now()}.json`);
+
+// ------------------------------------------------------------ saved disk
+
+function onDisk(m) {
+  const el = $('disk-status');
+  if (m.error) el.textContent = m.error;
+  else if (m.savedAt) {
+    const t = new Date(m.savedAt).toLocaleTimeString();
+    el.textContent = m.restored ? `Booted from your saved disk (saved ${t}).` : `Saved in this browser at ${t}.`;
+  } else el.textContent = "Booted from the original image. Files you change are saved in this browser.";
+}
+$('disk-dl').onclick = () => worker.postMessage({ type: 'disk-download' });
+$('disk-reset').onclick = () => boot(true);
 
 $('trace-open').onclick = () => {
   const w = window.open('trace.html#from-opener', '_blank');

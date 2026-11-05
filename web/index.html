@@ -95,6 +95,14 @@
           <button id="trace-dl" disabled>Download JSON</button>
         </div>
       </div>
+      <div class="card" id="disk-card" hidden>
+        <div class="card-title">Disk</div>
+        <div class="trace-row small" id="disk-status">Changes to xv6's disk are kept in this browser.</div>
+        <div class="trace-row">
+          <button id="disk-dl">Download fs.img</button>
+          <button id="disk-reset" title="Throw away saved changes and boot from the original image">Reset disk</button>
+        </div>
+      </div>
       <div class="foot"><a href="trace.html">Timeline viewer</a> · <a href="bench.html">Benchmark</a> · <a href="https://github.com/PS12007/rvwasm">Source</a></div>
     </aside>
   </main>
