@@ -5,12 +5,18 @@ WebAssembly, and good enough to boot xv6 and Linux.
 
 **Try it: [ps12007.github.io/rvwasm](https://ps12007.github.io/rvwasm/)**
 
-![xv6 booting in the browser, then running ls, cat and forktest](docs/media/xv6.gif)
+![xv6 booting in the browser, then running commands picked from the Try these drawer](docs/media/xv6.gif)
 
-That's xv6, MIT's teaching Unix, booting from a virtio disk image in a few seconds and
-taking commands. The panel on the right is the emulator itself: the registers, which
-privilege level the CPU is in, how many guest instructions per second it is retiring, and
-the code around the program counter.
+That's xv6, MIT's teaching Unix, booting from a virtio disk image and taking commands. The
+page is built like the front panel of an old workstation: an amber CRT for the console,
+lamps that show whether the CPU is running the kernel (S), a program (U) or firmware (M),
+and recessed readouts for the registers, the program counter and the instruction rate.
+
+You don't need to know Unix to use it. The **Try these** drawer has commands for each
+system grouped by what they do, each with a one-line explanation; clicking one types it
+for you. Every panel has a **?** that explains what it shows in plain words, and a short
+tour runs on your first visit. Keyboard shortcuts (space to halt, S to single-step, R to
+record) are under Help.
 
 ## What it emulates
 
@@ -36,19 +42,27 @@ device tree the emulator writes at boot. The kernel is built from `tinyconfig` w
 compressed instructions and no FPU, and userland is BusyBox on musl, all compiled for plain
 rv64ima with soft float. It reaches a shell after about 100 million instructions.
 
-You can also boot your own build: open "Boot your own kernel" in the side panel and pick a
+You can also boot your own build: open "Load your own" in the side panel and pick a
 bare-metal ELF (with an optional disk image) or a Linux `Image` (with an optional initramfs).
 The files never leave your browser.
 
 ## Looking inside
 
-![The timeline viewer showing a user-mode ecall entering the kernel's trap handler](docs/media/timeline.png)
+<img src="docs/media/recorder.png" align="right" width="340" alt="The recorder's plain-English summary after running cat README">
 
-Hit Record on the main page, do something, hit Stop, then Open timeline. The recorder keeps
-the most recent instructions and every trap, interrupt and return, and the viewer lets you
-scroll along them: privilege level across the top, trap markers, where the PC was, and the
-disassembled, symbolised instructions underneath. Above, a user program's `ecall` lands in
-xv6's trampoline at `0x3ffffff000`.
+Press Record, run a command, and the recorder stops by itself when the shell prompt comes
+back. It then tells you in plain language what the CPU did: how many instructions ran in
+the kernel versus your program, how many system calls the program made, how often the timer
+and the hardware interrupted, and which function was busiest. For `cat README` on xv6 it's
+almost all kernel: printing goes through the serial driver one character at a time.
+
+Open timeline shows the same recording instruction by instruction: privilege level across
+the top, trap markers, where the PC was, and the disassembled, symbolised instructions
+underneath. Below, a user program's `ecall` lands in xv6's trampoline at `0x3ffffff000`.
+
+<br clear="right">
+
+![The timeline viewer showing a user-mode ecall entering the kernel's trap handler](docs/media/timeline.png)
 
 The command-line runner records the same format:
 

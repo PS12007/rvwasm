@@ -500,7 +500,8 @@ function onTrace(json) {
   if (data) {
     let html = explain(data, recordedInput);
     if (recSeen > n * 1.05) {
-      html += `<p style="opacity:.75">The command ran for about ${fmtCount(recSeen)} instructions, more than the recorder keeps, so this covers its last ${fmtCount(n)}. Pick a larger "Keep last" to see more.</p>`;
+      const larger = [...$('trace-cap').options].some((o) => Number(o.value) > n);
+      html += `<p style="opacity:.75">The command ran for about ${fmtCount(recSeen)} instructions, more than the recorder keeps, so this covers its last ${fmtCount(n)}.${larger ? ' Pick a larger "Keep last" to see more.' : ''}</p>`;
     }
     $('explain').innerHTML = html;
     $('explain').hidden = false;
@@ -549,7 +550,7 @@ function explain(d, typed) {
     ? `While you ran ${lines.slice(-3).map((l) => `<code>${esc(l)}</code>`).join(', ')}:`
     : 'In the recorded stretch:';
   const out = [`<h4>What just happened</h4><p>${intro}</p>`];
-  out.push(`<p>The CPU executed ${plural(n, 'instruction', 'instructions')}. ${pct(byMode[0], n)}% were your programs (user mode) and ${pct(byMode[1], n)}% were the kernel${byMode[3] ? `, ${pct(byMode[3], n)}% firmware` : ''}.</p>`);
+  out.push(`<p>The CPU executed ${plural(n, 'instruction', 'instructions')}: ${pct(byMode[0], n)}% in your programs (user mode) and ${pct(byMode[1], n)}% in the kernel${byMode[3] ? `, ${pct(byMode[3], n)}% in firmware` : ''}.</p>`);
   if (syscalls) out.push(`<p>Programs asked the kernel for help ${plural(syscalls, 'time', 'times')}. Each of these <b>system calls</b> (to print text, read a file, start a program…) switches the CPU from user mode into the kernel and back.</p>`);
   else if (byMode[0] === 0) out.push('<p>No user program ran in this stretch: the kernel was busy on its own, or waiting for something to happen.</p>');
   if (timer) out.push(`<p>The timer interrupted ${plural(timer, 'time', 'times')}, giving the kernel a chance to switch to another program.</p>`);

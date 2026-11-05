@@ -12,5 +12,5 @@ gif() { # name start-seconds fps width colors
 }
 gif xv6 0.4 8 860 48
 gif linux 0.4 7 800 40
-cp "$IN/timeline.png" "$OUT/timeline.png"
+for f in timeline.png recorder.png console.png; do cp "$IN/$f" "$OUT/$f"; done
 ls -la "$OUT"
