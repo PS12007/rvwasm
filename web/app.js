@@ -185,13 +185,6 @@ function setState(text, alert = false) {
 
 // ------------------------------------------------------------ boot
 
-function warmUp() {
-  const s = $('screen');
-  s.classList.remove('warming');
-  void s.offsetWidth; // restart the animation
-  s.classList.add('warming');
-}
-
 function startBoot(label) {
   booting = true;
   outputTail = '';
@@ -200,7 +193,6 @@ function startBoot(label) {
   $('boot-fill').style.width = '0%';
   $('boot-count').textContent = '0 instructions';
   $('boot-note').textContent = 'Downloading the operating system…';
-  warmUp();
 }
 
 function finishBoot() {
@@ -397,13 +389,11 @@ function renderStats(m) {
   $('duty-m').style.width = `${(100 * privShare[2]) / total}%`;
   $('duty-load').style.width = `${100 * (1 - m.load)}%`;
 
+  // A changed register stays highlighted until the next update (~250 ms).
   m.regs.forEach((h, i) => {
-    if (prevRegs[i] === h) return;
-    regEls[i].innerHTML = ledHex(h);
-    if (prevRegs.length) {
-      regEls[i].classList.add('changed');
-      requestAnimationFrame(() => requestAnimationFrame(() => regEls[i].classList.remove('changed')));
-    }
+    const changed = prevRegs.length > 0 && prevRegs[i] !== h;
+    if (prevRegs[i] !== h) regEls[i].innerHTML = ledHex(h);
+    regEls[i].classList.toggle('changed', changed);
   });
   prevRegs = m.regs;
 
@@ -453,11 +443,8 @@ function drawScope(hist) {
     i ? g.lineTo(x, y) : g.moveTo(x, y);
   });
   g.strokeStyle = css('--phosphor');
-  g.shadowColor = css('--phosphor');
-  g.shadowBlur = 6;
   g.lineWidth = 1.6;
   g.stroke();
-  g.shadowBlur = 0;
   g.fillStyle = css('--phosphor-dim');
   g.font = '15px VT323, monospace';
   g.fillText(`PEAK ${fmtCount(max)}IPS`.replace(/(\d)IPS/, '$1 IPS'), 6, 14);
@@ -471,7 +458,7 @@ function toggleRecord() {
     recWaitingForPrompt = false;
     worker.postMessage({ type: 'trace-stop' });
     $('trace-btn').classList.remove('armed');
-    $('rec-lamp').classList.remove('on', 'blink');
+    $('rec-lamp').classList.remove('on');
     $('trace-label').textContent = 'Record';
     $('trace-status').textContent = 'Reading the recording…';
   } else {
@@ -481,7 +468,7 @@ function toggleRecord() {
     recSeen = 0;
     worker.postMessage({ type: 'trace-start', capacity: Number($('trace-cap').value) });
     $('trace-btn').classList.add('armed');
-    $('rec-lamp').classList.add('on', 'blink');
+    $('rec-lamp').classList.add('on');
     $('trace-label').textContent = 'Stop';
     $('trace-status').textContent = 'Recording. Run a command, then press Stop.';
     $('explain').hidden = true;
