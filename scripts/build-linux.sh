@@ -97,7 +97,8 @@ EOF
       -e 's/^CONFIG_FEATURE_TC_INGRESS=y/# CONFIG_FEATURE_TC_INGRESS is not set/' \
       -e 's/^CONFIG_SHA1_HWACCEL=y/# CONFIG_SHA1_HWACCEL is not set/' \
       -e 's/^CONFIG_SHA256_HWACCEL=y/# CONFIG_SHA256_HWACCEL is not set/' "$BBOBJ/.config"
-    yes '' | bbmake -s oldconfig >/dev/null
+    # Accept defaults for any remaining questions (`yes` exits on SIGPIPE, so not a pipe under pipefail).
+    bbmake -s oldconfig < <(yes '') >/dev/null
   fi
   bbmake -j"$JOBS" busybox >/dev/null
   bbmake -s busybox.links >/dev/null
