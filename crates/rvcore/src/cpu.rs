@@ -106,6 +106,9 @@ pub struct Cpu {
     pub(crate) vm_data: bool,
     pub(crate) data_prv: u8,
 
+    /// Expansions of every 16-bit instruction.
+    rvc: &'static crate::rvc::Table,
+
     pub trace: Trace,
     pub sbi: Option<SbiHandler>,
     /// Count of traps taken, for stats.
@@ -161,6 +164,7 @@ impl Cpu {
             vm_fetch: false,
             vm_data: false,
             data_prv: PRV_M,
+            rvc: crate::rvc::table(),
             trace: Trace::default(),
             sbi: None,
             traps_taken: 0,
@@ -245,16 +249,17 @@ impl Cpu {
         let r = if raw & 3 == 3 {
             self.execute(raw, pc, 4)
         } else {
-            match crate::rvc::expand(raw as u16) {
-                Some(inst) => self.execute(inst, pc, 2).map_err(|t| {
+            // A 16-bit instruction runs as its 32-bit expansion (0 if illegal).
+            match self.rvc.get(raw as u16) {
+                0 => Err(Trap::new(cause::ILLEGAL_INST, raw as u64 & 0xffff)),
+                inst => self.execute(inst, pc, 2).map_err(|t| {
                     // An illegal compressed instruction reports its own 16 bits.
                     if t.cause == cause::ILLEGAL_INST {
-                        Trap::new(t.cause, raw as u64)
+                        Trap::new(t.cause, raw as u64 & 0xffff)
                     } else {
                         t
                     }
                 }),
-                None => Err(Trap::new(cause::ILLEGAL_INST, raw as u64)),
             }
         };
         if let Err(t) = r {

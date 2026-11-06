@@ -212,6 +212,28 @@ pub fn expand(c: u16) -> Option<u32> {
     })
 }
 
+/// Every 16-bit encoding expanded ahead of time: 0 marks an illegal one (no
+/// 32-bit instruction is 0). One load per compressed instruction instead of
+/// a chain of branches; 256 KiB, and the parcels real code uses stay in cache.
+pub struct Table(Box<[u32]>);
+
+impl Table {
+    fn build() -> Table {
+        Table((0..=u16::MAX).map(|c| if c & 3 == 3 { 0 } else { expand(c).unwrap_or(0) }).collect())
+    }
+
+    #[inline(always)]
+    pub fn get(&self, c: u16) -> u32 {
+        self.0[c as usize]
+    }
+}
+
+/// The shared table, built on first use.
+pub fn table() -> &'static Table {
+    static T: std::sync::OnceLock<Table> = std::sync::OnceLock::new();
+    T.get_or_init(Table::build)
+}
+
 #[cfg(test)]
 mod tests {
     use super::expand;
@@ -253,6 +275,16 @@ mod tests {
         assert_eq!(d(0xc111), "beq a0, zero, 1004"); // c.beqz a0,.+4
         assert_eq!(d(0xfd75), "bne a0, zero, ffc"); // c.bnez a0,.-4
         assert_eq!(d(0x7179), "addi sp, sp, -48"); // c.addi16sp sp,-48
+    }
+
+    #[test]
+    fn table_matches_expand() {
+        let t = super::table();
+        for c in 0..=u16::MAX {
+            if c & 3 != 3 {
+                assert_eq!(t.get(c), expand(c).unwrap_or(0), "{c:#06x}");
+            }
+        }
     }
 
     #[test]
