@@ -24,15 +24,19 @@ step back, R to record) are under Help.
 - An RV64GC hart (RV64IMAFDC with Zicsr and Zifencei): the base integer ISA,
   multiply/divide, atomics, single- and double-precision floating point, and 16-bit
   compressed instructions. That is the ISA standard RISC-V Linux distributions target.
+- The bit-manipulation extensions Zba, Zbb, Zbc and Zbs (shifted adds, count/rotate/
+  byte-reverse, carry-less multiply, single-bit ops) and Zicond (branchless select), all
+  part of the RVA23 profile. The Linux kernel sees them in the device tree and patches in
+  its Zbb string routines at boot.
 - Machine, supervisor and user mode, with traps, delegation and interrupts.
 - Sv39 paging, with the accessed/dirty bits updated in hardware.
 - A 16550 UART, the CLINT timer, a PLIC, and a virtio-mmio block device, at the same
   addresses as QEMU's `virt` board.
 - The Sstc timer extension, which current xv6 relies on.
 
-It passes all 244 tests in the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
-suites for this ISA (rv64ui, um, ua, uf, ud, uc, si, mi, in both the physical and virtual-memory
-variants), and xv6's own `usertests` runs to the end with ALL TESTS PASSED. CI checks both on
+It passes all 334 tests in the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
+suites for this ISA (rv64ui, um, ua, uf, ud, uc, si, mi, uzba, uzbb, uzbc, uzbs, uzicond, in both
+the physical and virtual-memory variants), and xv6's own `usertests` runs to the end with ALL TESTS PASSED. CI checks both on
 every push.
 
 Everything the page runs is built with compressed instructions, as real RISC-V software is:
@@ -203,7 +207,7 @@ every time. Time travel is built on that.
 
 ## Not done yet
 
-- No vector (V) or bit-manipulation (B) extensions.
+- No vector (V) extension.
 - One hart only.
 - Time travel only reaches the recent past (it is bounded by memory), and reloading the
   page starts from scratch unless you load a saved machine.

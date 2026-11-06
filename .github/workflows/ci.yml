@@ -29,7 +29,7 @@ jobs:
       - run: cargo test --workspace --release
 
   riscv-tests:
-    name: riscv-tests (rv64ui/um/ua/uf/ud/uc/si/mi, p + v)
+    name: riscv-tests (rv64ui/um/ua/uf/ud/uc/si/mi + zba/zbb/zbc/zbs/zicond, p + v)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -111,6 +111,11 @@ jobs:
           ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
           --prompt 'Try:' --script "awk 'BEGIN { print 4 * atan2(1, 1), sqrt(2), 1e300 * 1e300 }'\n"
           --expect '3.14159 1.41421 inf' --max-cycles 20000000000
+      - name: Bit manipulation extensions seen by the kernel
+        run: >
+          ./target/release/rvwasm run build/linux/Image --linux --initrd build/linux/initramfs.cpio.gz
+          --prompt 'Try:' --script "grep -m1 isa /proc/cpuinfo | tr _ ' '\n"
+          --expect 'zba zbb zbc zbs' --max-cycles 20000000000
       - uses: actions/upload-artifact@v4
         with:
           name: linux-images

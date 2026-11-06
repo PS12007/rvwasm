@@ -140,6 +140,15 @@ pub fn disasm(inst: u32, pc: u64) -> String {
             let n = ["sb", "sh", "sw", "sd", "?", "?", "?", "?"][f3 as usize];
             format!("{} {}, {}({})", n, r(rs2), imm_s(inst) as i64, r(rs1))
         }
+        0x13 | 0x1b | 0x33 | 0x3b if crate::bitmanip::decode(inst).is_some() => {
+            let op = crate::bitmanip::decode(inst).unwrap();
+            let b = crate::bitmanip::operand_b(op, inst, &[0; 32]);
+            match op.form() {
+                crate::bitmanip::Form::Reg => format!("{} {}, {}, {}", op.name(), r(rd), r(rs1), r(rs2)),
+                crate::bitmanip::Form::Imm => format!("{} {}, {}, {}", op.name(), r(rd), r(rs1), b),
+                crate::bitmanip::Form::Unary => format!("{} {}, {}", op.name(), r(rd), r(rs1)),
+            }
+        }
         0x13 => {
             if inst == 0x13 {
                 return "nop".into();
@@ -262,5 +271,9 @@ mod tests {
         assert_eq!(disasm(0xc2051553, 0), "fcvt.w.d a0, fa0, rtz");
         assert_eq!(disasm(0x22a50553, 0), "fmv.d fa0, fa0");
         assert_eq!(disasm(0x2008, 0), "fld fa0, 0(s0)"); // c.fld
+        assert_eq!(disasm(0x20b54533, 0), "sh2add a0, a0, a1");
+        assert_eq!(disasm(0x6b855513, 0), "rev8 a0, a0");
+        assert_eq!(disasm(0x0805453b, 0), "zext.h a0, a0");
+        assert_eq!(disasm(0x0eb57533, 0), "czero.nez a0, a0, a1");
     }
 }

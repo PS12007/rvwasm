@@ -1,5 +1,5 @@
 //! RV64IMAC + Zicsr + Zifencei instruction execution (F and D are in
-//! `fpu`). Compressed instructions arrive here already expanded by
+//! `fpu`, bit manipulation and Zicond in `bitmanip`). Compressed instructions arrive here already expanded by
 //! `rvc::expand`.
 
 use crate::cpu::{cause, Cpu, Trap, PRV_M, PRV_S, PRV_U};
@@ -180,7 +180,7 @@ impl Cpu {
                     0 => a.wrapping_add(imm),
                     1 => {
                         if inst >> 26 != 0 {
-                            return illegal(inst);
+                            return self.exec_bitmanip(inst);
                         }
                         a << shamt
                     }
@@ -190,7 +190,7 @@ impl Cpu {
                     5 => match inst >> 26 {
                         0x00 => a >> shamt,
                         0x10 => ((a as i64) >> shamt) as u64,
-                        _ => return illegal(inst),
+                        _ => return self.exec_bitmanip(inst),
                     },
                     6 => a | imm,
                     _ => a & imm,
@@ -206,7 +206,7 @@ impl Cpu {
                     (1, 0x00) => sext32(((a as u32) << shamt) as u64),
                     (5, 0x00) => sext32(((a as u32) >> shamt) as u64),
                     (5, 0x20) => ((a as i32) >> shamt) as i64 as u64,
-                    _ => return illegal(inst),
+                    _ => return self.exec_bitmanip(inst),
                 };
                 self.x[rd(inst)] = v;
             }
@@ -233,7 +233,7 @@ impl Cpu {
                     (0x01, 5) => divu(a, b),
                     (0x01, 6) => rem(a, b),
                     (0x01, 7) => remu(a, b),
-                    _ => return illegal(inst),
+                    _ => return self.exec_bitmanip(inst),
                 };
                 self.x[rd(inst)] = v;
             }
@@ -258,7 +258,7 @@ impl Cpu {
                         (if b == 0 { a } else { a.wrapping_rem(b) }) as i64 as u64
                     }
                     (0x01, 7) => sext32((if b32 == 0 { a32 } else { a32 % b32 }) as u64),
-                    _ => return illegal(inst),
+                    _ => return self.exec_bitmanip(inst),
                 };
                 self.x[rd(inst)] = v;
             }
@@ -275,6 +275,19 @@ impl Cpu {
             0x73 => return self.exec_system(inst, pc),
             _ => return illegal(inst),
         }
+        Ok(())
+    }
+
+    /// Zba/Zbb/Zbc/Zbs/Zicond, reached only when the base decode falls through.
+    #[cold]
+    #[inline(never)]
+    fn exec_bitmanip(&mut self, inst: u32) -> Result<(), Trap> {
+        let Some(op) = crate::bitmanip::decode(inst) else {
+            return illegal(inst);
+        };
+        let a = self.x[rs1(inst)];
+        let b = crate::bitmanip::operand_b(op, inst, &self.x);
+        self.x[rd(inst)] = crate::bitmanip::eval(op, a, b);
         Ok(())
     }
 

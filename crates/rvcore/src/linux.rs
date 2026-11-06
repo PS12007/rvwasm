@@ -66,9 +66,12 @@ pub fn device_tree(ram_size: u64, bootargs: &str, initrd: Option<(u64, u64)>, ha
     f.prop_u32("reg", 0);
     f.prop_str("status", "okay");
     f.prop_str("compatible", "riscv");
-    f.prop_str("riscv,isa", "rv64imafdc_zicsr_zifencei_zicntr");
+    f.prop_str("riscv,isa", "rv64imafdc_zicsr_zifencei_zicntr_zicond_zba_zbb_zbc_zbs");
     f.prop_str("riscv,isa-base", "rv64i");
-    f.prop_strs("riscv,isa-extensions", &["i", "m", "a", "f", "d", "c", "zicsr", "zifencei", "zicntr"]);
+    f.prop_strs(
+        "riscv,isa-extensions",
+        &["i", "m", "a", "f", "d", "c", "zicsr", "zifencei", "zicntr", "zicond", "zba", "zbb", "zbc", "zbs"],
+    );
     f.prop_str("mmu-type", "riscv,sv39");
     f.begin_node("interrupt-controller");
     f.prop_u32("#interrupt-cells", 1);

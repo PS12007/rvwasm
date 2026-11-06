@@ -50,6 +50,9 @@ kmake() { make -C "$SRCDIR/linux" O="$OBJ" ARCH=riscv CROSS_COMPILE="$CROSS" "$@
 kmake -s tinyconfig
 "$SRCDIR/linux/scripts/kconfig/merge_config.sh" -m -O "$OBJ" "$OBJ/.config" "$ROOT/linux/rvwasm.config" >/dev/null
 kmake -s olddefconfig
+# The kernel patches in Zbb string routines at boot when the device tree
+# lists zbb; check the toolchain was new enough for the option to stick.
+grep -q '^CONFIG_RISCV_ISA_ZBB=y' "$OBJ/.config" || { echo "error: CONFIG_RISCV_ISA_ZBB did not apply" >&2; exit 1; }
 kmake -j"$JOBS" Image
 cp "$OBJ/arch/riscv/boot/Image" "$OUT/Image"
 cp "$OBJ/System.map" "$OUT/System.map"

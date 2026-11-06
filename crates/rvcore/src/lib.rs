@@ -7,6 +7,7 @@
 #![allow(clippy::result_unit_err)]
 
 pub mod bench;
+pub mod bitmanip;
 pub mod bus;
 pub mod cpu;
 pub mod csr;

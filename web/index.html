@@ -210,14 +210,14 @@
       <h3>What's emulated</h3>
       <ul>
         <li>Time travel: the machine can run backwards, one instruction at a time, because every run is exactly repeatable.</li>
-        <li>A 64-bit RISC-V processor, RV64GC (RV64IMAFDC with Zicsr and Zifencei): integer maths, multiply/divide, atomics, single and double precision floating point, 16-bit compressed instructions and control registers. That is the instruction set standard RISC-V Linux software is built for.</li>
+        <li>A 64-bit RISC-V processor, RV64GC (RV64IMAFDC with Zicsr and Zifencei): integer maths, multiply/divide, atomics, single and double precision floating point, 16-bit compressed instructions and control registers. That is the instruction set standard RISC-V Linux software is built for. On top of that it has the bit-manipulation extensions (Zba, Zbb, Zbc, Zbs) and Zicond, which Linux uses for its string routines.</li>
         <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
         <li>Sv39 virtual memory with a software TLB.</li>
         <li>A 16550 serial port (the terminal), CLINT timer, PLIC interrupt controller and a virtio block disk.</li>
       </ul>
       <h3>What it runs</h3>
       <p><b>xv6</b> is MIT's small teaching version of Unix. <b>Linux 6.12</b> boots with BusyBox, a compact set of standard Unix commands. Both are built from source for this CPU.</p>
-      <p>It passes all 244 official riscv-tests for its instruction set, and xv6's own test suite.</p>
+      <p>It passes all 334 official riscv-tests for its instruction set, and xv6's own test suite.</p>
       <p><a href="https://github.com/PS12007/rvwasm">Source code on GitHub</a></p>
     </div>
   </dialog>

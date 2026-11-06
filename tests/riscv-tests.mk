@@ -1,4 +1,5 @@
-# Builds the official riscv-tests ISA suites we target (RV64IMAFDC + Zicsr, M/S/U).
+# Builds the official riscv-tests ISA suites we target (RV64IMAFDC + Zicsr,
+# Zba/Zbb/Zbc/Zbs and Zicond, M/S/U).
 # The suites are built without C, as upstream builds them, so they also
 # check the 32-bit-only paths; rv64uc adds C. With F and D enabled, the csr
 # test checks that FP stores trap while mstatus.FS is off.
@@ -20,12 +21,19 @@ include $(src_dir)/rv64mi/Makefrag
 include $(src_dir)/rv64uc/Makefrag
 include $(src_dir)/rv64uf/Makefrag
 include $(src_dir)/rv64ud/Makefrag
+include $(src_dir)/rv64uzba/Makefrag
+include $(src_dir)/rv64uzbb/Makefrag
+include $(src_dir)/rv64uzbc/Makefrag
+include $(src_dir)/rv64uzbs/Makefrag
+include $(src_dir)/rv64uzicond/Makefrag
 
 RISCV_GCC ?= riscv64-unknown-elf-gcc
 MARCH     := -march=rv64imafd_zicsr_zifencei -mabi=lp64
 VMARCH    := $(MARCH)
 rv64uc_MARCH  := -march=rv64imafdc_zicsr_zifencei -mabi=lp64
 rv64uc_VMARCH := $(rv64uc_MARCH)
+BMARCH        := -march=rv64imafd_zicsr_zifencei_zba_zbb_zbc_zbs_zicond -mabi=lp64
+$(foreach s,rv64uzba rv64uzbb rv64uzbc rv64uzbs rv64uzicond,$(eval $(s)_MARCH := $(BMARCH))$(eval $(s)_VMARCH := $(BMARCH)))
 OPTS      := -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles
 LIBC_INC  ?= /usr/lib/picolibc/riscv64-unknown-elf/include
 
@@ -38,7 +46,7 @@ $(addprefix $(OUT)/,$($(1)_v_tests)): $(OUT)/$(1)-v-%: $(src_dir)/$(1)/%.S | $(O
 ALL += $(addprefix $(OUT)/,$($(1)_p_tests) $($(1)_v_tests))
 endef
 
-$(foreach s,rv64ui rv64um rv64ua rv64si rv64mi rv64uc rv64uf rv64ud,$(eval $(call suite,$(s))))
+$(foreach s,rv64ui rv64um rv64ua rv64si rv64mi rv64uc rv64uf rv64ud rv64uzba rv64uzbb rv64uzbc rv64uzbs rv64uzicond,$(eval $(call suite,$(s))))
 
 all: $(ALL)
 $(OUT):
