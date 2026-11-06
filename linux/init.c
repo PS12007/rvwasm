@@ -1,6 +1,6 @@
 // rvwasm mini init: a tiny interactive shell for the Linux demo, built with
-// no libc (raw RISC-V Linux syscalls), so it runs on RV64IMA without any
-// FP or compressed instructions. When BusyBox is in the initramfs, this
+// no libc (raw RISC-V Linux syscalls) and no floating point, so it runs on
+// plain RV64IMAC. When BusyBox is in the initramfs, this
 // program is not used.
 //
 // Commands: help, uname, echo, ls [dir], cat FILE, mounts, mem, uptime,

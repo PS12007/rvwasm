@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a minimal RV64IMA Linux kernel and a BusyBox initramfs for rvwasm.
+# Build a minimal RV64IMAC Linux kernel and a BusyBox initramfs for rvwasm.
 #
 # Outputs:
 #   build/linux/Image                 kernel (boots in S-mode on rvwasm's built-in SBI)
@@ -11,7 +11,7 @@
 #   musl     github.com/kraj/musl        tag v1.2.5   (mirror of git.musl-libc.org)
 #   BusyBox  github.com/mirror/busybox   tag 1_36_1   (mirror of git.busybox.net)
 #
-# Userspace is soft-float (lp64) with no compressed instructions. No distro ships
+# Userspace is soft-float (lp64) with compressed instructions. No distro ships
 # a libc for that, so musl is built here; libgcc and crt files come from the
 # rv64im/lp64 multilib of the bare-metal toolchain (gcc-riscv64-unknown-elf).
 set -euo pipefail
@@ -23,7 +23,7 @@ OUT="$ROOT/build/linux"
 MUSL="$ROOT/build/musl"
 BBOBJ="$ROOT/build/busybox-obj"
 CROSS="${CROSS_COMPILE:-riscv64-linux-gnu-}"
-MARCH="-march=rv64ima_zicsr_zifencei -mabi=lp64"
+MARCH="-march=rv64imac_zicsr_zifencei -mabi=lp64"
 BUSYBOX="${BUSYBOX:-1}"
 SOFT_MULTILIB="${SOFT_MULTILIB:-$(riscv64-unknown-elf-gcc -march=rv64im -mabi=lp64 -print-file-name=libgcc.a | xargs dirname)}"
 JOBS="$(nproc)"
@@ -132,10 +132,13 @@ fi
 
 "$OBJ/usr/gen_init_cpio" "$LIST" | gzip -9 > "$OUT/initramfs.cpio.gz"
 
-# Everything must be plain RV64IMA: no compressed or floating-point instructions.
-if "${CROSS}objdump" -d "$CHECK" "$OBJ/vmlinux" |
-  grep -qE '^\s+[0-9a-f]+:\s+[0-9a-f]{4}\s+c\.|\sf(add|sub|mul|div|ld|sd|lw|sw|mv|cvt)\.'; then
-  echo "error: compressed or FP instructions found" >&2
+# Everything must be RV64IMAC: no floating-point instructions.
+dump="$("${CROSS}objdump" -d "$CHECK" "$OBJ/vmlinux")"
+if grep -qE '\sf(add|sub|mul|div|ld|sd|lw|sw|mv|cvt)\.' <<<"$dump"; then
+  echo "error: FP instructions found" >&2
   exit 1
 fi
+total="$(grep -cE '^\s+[0-9a-f]+:\s+[0-9a-f]{4,8}\s' <<<"$dump")"
+short="$(grep -cE '^\s+[0-9a-f]+:\s+[0-9a-f]{4}\s' <<<"$dump")"
+echo "linux: $short of $total instructions are compressed"
 ls -la "$OUT/Image" "$OUT/initramfs.cpio.gz"

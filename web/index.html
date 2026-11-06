@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>rvwasm</title>
-  <meta name="description" content="A RISC-V computer in your browser: an RV64IMA emulator in Rust and WebAssembly that boots xv6 and Linux.">
+  <meta name="description" content="A RISC-V computer in your browser: an RV64IMAC emulator in Rust and WebAssembly that boots xv6 and Linux.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -134,7 +134,7 @@
       </details>
 
       <details class="module" id="custom-card">
-        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMA ELF (with an optional disk image), or a Linux Image (with an optional initramfs). The files never leave your browser.">?</button></summary>
+        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMAC ELF (with an optional disk image), or a Linux Image (with an optional initramfs). The files never leave your browser.">?</button></summary>
         <div class="field"><label for="custom-kernel" class="engr">Kernel</label><input type="file" id="custom-kernel"></div>
         <div class="field"><label for="custom-extra" class="engr">Disk or initramfs</label><input type="file" id="custom-extra"></div>
         <button class="key small" id="custom-boot" disabled><span class="cap">Boot it</span></button>
@@ -185,7 +185,7 @@
       <p>A RISC-V computer emulated in your browser. The CPU is written in Rust and compiled to WebAssembly; nothing runs on a server.</p>
       <h3>What's emulated</h3>
       <ul>
-        <li>A 64-bit RISC-V processor: RV64IMA with Zicsr and Zifencei (integer maths, multiply/divide, atomics, control registers).</li>
+        <li>A 64-bit RISC-V processor: RV64IMAC with Zicsr and Zifencei (integer maths, multiply/divide, atomics, 16-bit compressed instructions, control registers).</li>
         <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
         <li>Sv39 virtual memory with a software TLB.</li>
         <li>A 16550 serial port (the terminal), CLINT timer, PLIC interrupt controller and a virtio block disk.</li>
