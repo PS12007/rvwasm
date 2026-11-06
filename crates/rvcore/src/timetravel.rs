@@ -55,6 +55,7 @@ pub struct TimeTravel {
     /// Absolute index of the next logged input to feed back while replaying.
     next_input: u64,
     frontier: u64,
+    frontier_instret: u64,
     held: Vec<u8>,
 }
 
@@ -72,6 +73,7 @@ impl TimeTravel {
             inputs_base: 0,
             next_input: 0,
             frontier: cpu.cycle(),
+            frontier_instret: cpu.instret,
             held: Vec::new(),
         };
         tt.checkpoint(cpu);
@@ -175,6 +177,7 @@ impl TimeTravel {
                 cpu.bus.uart.tx.clear(); // already shown
             } else {
                 self.frontier = cpu.cycle();
+                self.frontier_instret = cpu.instret;
             }
         }
         cpu.cycle() - start
@@ -261,6 +264,12 @@ impl TimeTravel {
                 break;
             }
         }
+        // The present may be idle cycles past its last instruction: asked for
+        // it, go all the way there.
+        if target >= self.frontier_instret && self.replaying(cpu) {
+            let rest = self.frontier - cpu.cycle();
+            self.advance(cpu, rest, u64::MAX);
+        }
         cpu.instret
     }
 
@@ -285,6 +294,11 @@ impl TimeTravel {
     /// Cycle of the newest point reached.
     pub fn frontier(&self) -> u64 {
         self.frontier
+    }
+
+    /// Instructions retired at the newest point reached.
+    pub fn frontier_instret(&self) -> u64 {
+        self.frontier_instret
     }
 
     /// Cycle of the newest checkpoint (for tests and stats).

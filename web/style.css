@@ -642,3 +642,11 @@ kbd {
   .keys { gap: 8px; }
 }
 
+
+/* Time travel */
+.tt-keys { gap: 6px; }
+#tt-scrub { width: 100%; margin: 8px 0 2px; accent-color: var(--lamp-idle); }
+#tt-scrub:disabled { opacity: 0.45; }
+.tt-scale { display: flex; justify-content: space-between; gap: 8px; font: 11.5px var(--mono, monospace); color: var(--engrave-dim); }
+.tt-scale #tt-pos { color: var(--engrave); }
+#tt-module.past #tt-pos { color: var(--lamp-idle); }

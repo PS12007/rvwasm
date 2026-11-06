@@ -3,6 +3,7 @@
 use rvcore::{
     build_machine,
     disasm::{disasm, inst_len},
+    timetravel::TimeTravel,
     Cpu, MachineConfig,
 };
 use wasm_bindgen::prelude::*;
@@ -11,6 +12,20 @@ use wasm_bindgen::prelude::*;
 pub struct Emulator {
     cpu: Cpu,
     symbols: Vec<(String, u64)>,
+    /// Always recording, so the debugger can step backwards.
+    tt: TimeTravel,
+}
+
+/// Instructions between checkpoints: stepping back replays at most this many.
+const TT_INTERVAL: u64 = 1_000_000;
+/// Memory for going back; the oldest history is dropped beyond this.
+const TT_BYTES: usize = 64 << 20;
+
+impl Emulator {
+    fn with(mut cpu: Cpu, symbols: Vec<(String, u64)>) -> Emulator {
+        let tt = TimeTravel::new(&mut cpu, TT_INTERVAL, TT_BYTES);
+        Emulator { cpu, symbols, tt }
+    }
 }
 
 fn sorted_symbols(kernel: &[u8]) -> Vec<(String, u64)> {
@@ -31,7 +46,7 @@ impl Emulator {
     pub fn new(kernel: &[u8], disk: Option<Vec<u8>>, ram_mb: u32) -> Result<Emulator, JsError> {
         let cpu = build_machine(MachineConfig { ram_size: (ram_mb as usize) << 20, kernel: kernel.to_vec(), disk })
             .map_err(|e| JsError::new(&e))?;
-        Ok(Emulator { cpu, symbols: sorted_symbols(kernel) })
+        Ok(Emulator::with(cpu, sorted_symbols(kernel)))
     }
 
     /// Boot a Linux `Image` with the built-in SBI and an optional initramfs.
@@ -60,16 +75,73 @@ impl Emulator {
             })
             .collect();
         symbols.sort_by_key(|(_, v)| *v);
-        Ok(Emulator { cpu, symbols })
+        Ok(Emulator::with(cpu, symbols))
+    }
+
+    /// Carry on from a snapshot made by `save_snapshot` (or `rvwasm run --save`).
+    pub fn from_snapshot(bytes: &[u8]) -> Result<Emulator, JsError> {
+        let cpu = Cpu::from_snapshot(bytes).map_err(|e| JsError::new(&e))?;
+        Ok(Emulator::with(cpu, Vec::new()))
+    }
+
+    /// True if `bytes` is a snapshot file.
+    pub fn is_snapshot(bytes: &[u8]) -> bool {
+        rvcore::snapshot::is_snapshot(bytes)
+    }
+
+    /// The whole machine, RAM and disk included, as a file.
+    pub fn save_snapshot(&mut self) -> Vec<u8> {
+        self.cpu.save_snapshot()
     }
 
     /// Run for up to `cycles` cycles; returns cycles consumed.
     pub fn run(&mut self, cycles: f64) -> f64 {
-        self.cpu.run(cycles as u64) as f64
+        self.tt.run(&mut self.cpu, cycles as u64) as f64
     }
 
+    /// Keyboard input. While the machine is behind the present (after going
+    /// back), it waits until the replay catches up.
     pub fn push_input(&mut self, bytes: &[u8]) {
-        self.cpu.bus.uart.push_input(bytes);
+        self.tt.push_input(&mut self.cpu, bytes);
+    }
+
+    // ------------------------------------------------------------ time travel
+
+    /// Go to the point where `instret` instructions had retired, backwards
+    /// or forwards (forwards stops at the present). Returns where it got to.
+    pub fn seek(&mut self, instret: f64) -> f64 {
+        let target = (instret.max(0.0) as u64).min(self.tt.frontier_instret());
+        self.tt.seek_instret(&mut self.cpu, target) as f64
+    }
+
+    /// Run exactly `n` more instructions (or as far as the guest gets).
+    pub fn step_forward(&mut self, n: u32) -> f64 {
+        let target = self.cpu.instret + n as u64;
+        self.tt.seek_instret(&mut self.cpu, target) as f64
+    }
+
+    pub fn step_back(&mut self, n: u32) -> f64 {
+        self.tt.step_back(&mut self.cpu, n as u64) as f64
+    }
+
+    /// Back to just before the most recent trap; false if out of reach.
+    pub fn back_to_last_trap(&mut self) -> bool {
+        self.tt.back_to_last_trap(&mut self.cpu)
+    }
+
+    /// True while behind the present.
+    pub fn replaying(&self) -> bool {
+        self.tt.replaying(&self.cpu)
+    }
+
+    /// Instruction counts [oldest reachable, now, present] and bytes held.
+    pub fn history(&self) -> Vec<f64> {
+        vec![
+            self.tt.oldest_instret() as f64,
+            self.cpu.instret as f64,
+            self.tt.frontier_instret() as f64,
+            self.tt.bytes_held(&self.cpu) as f64,
+        ]
     }
 
     pub fn input_pending(&self) -> usize {
@@ -143,22 +215,11 @@ impl Emulator {
                 Some(lo) => {
                     let w = if lo & 3 == 3 { lo | self.cpu.peek_virt(a + 2, 2).unwrap_or(0) << 16 } else { lo };
                     let hex = if lo & 3 == 3 { format!("{w:08x}") } else { format!("{w:04x}") };
-                    out.push_str(&format!(
-                        "{:x}|{}|{}|{}
-",
-                        a,
-                        hex,
-                        disasm(w as u32, a),
-                        self.symbol_for(a)
-                    ));
+                    out.push_str(&format!("{:x}|{}|{}|{}\n", a, hex, disasm(w as u32, a), self.symbol_for(a)));
                     a = a.wrapping_add(inst_len(w as u32));
                 }
                 None => {
-                    out.push_str(&format!(
-                        "{:x}||<unmapped>|
-",
-                        a
-                    ));
+                    out.push_str(&format!("{a:x}||<unmapped>|\n"));
                     a = a.wrapping_add(4);
                 }
             }
@@ -174,7 +235,11 @@ impl Emulator {
         if before == 0 {
             return pc;
         }
-        for back in (before as u64)..=(4 * before as u64 + 8) {
+        // Starting further back gives the decoder more room to fall into step
+        // with the real instruction boundaries, so try the farthest first, and
+        // reject decodings whose last instructions are not valid ones.
+        let mut fallback = None;
+        for back in (before as u64..=4 * before as u64 + 16).rev() {
             let mut a = pc.wrapping_sub(2 * back);
             let mut starts = Vec::new();
             while a < pc {
@@ -184,11 +249,21 @@ impl Emulator {
                     None => break,
                 }
             }
-            if a == pc && starts.len() >= before {
-                return starts[starts.len() - before];
+            if a != pc || starts.len() < before {
+                continue;
             }
+            let first = starts[starts.len() - before];
+            let valid = starts[starts.len() - before..].iter().all(|&s| {
+                let lo = self.cpu.peek_virt(s, 2).unwrap_or(0);
+                let w = if lo & 3 == 3 { lo | self.cpu.peek_virt(s + 2, 2).unwrap_or(0) << 16 } else { lo };
+                !disasm(w as u32, s).starts_with("unknown")
+            });
+            if valid {
+                return first;
+            }
+            fallback.get_or_insert(first);
         }
-        pc.wrapping_sub(4 * before as u64)
+        fallback.unwrap_or(pc.wrapping_sub(4 * before as u64))
     }
 
     fn symbol_for(&self, addr: u64) -> String {

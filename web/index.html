@@ -15,7 +15,7 @@
   <header class="nameplate">
     <div class="badge">
       <span class="badge-name">rvwasm</span>
-      <span class="badge-model">RV64·IMA system console<br><small>Sv39 · M/S/U · 10 MHz timebase</small></span>
+      <span class="badge-model">RV64·IMAC system console<br><small>Sv39 · M/S/U · 10 MHz timebase</small></span>
     </div>
     <div class="keys" role="toolbar" aria-label="Machine controls">
       <label class="selector" for="image">
@@ -27,6 +27,7 @@
       </label>
       <button class="key" id="reset" title="Reboot the guest"><span class="cap">Reset</span></button>
       <button class="key" id="pause" title="Pause or resume (space)"><span class="lamp run on" id="run-lamp"></span><span class="cap" id="pause-label">Halt</span></button>
+      <button class="key" id="back" title="Go back one instruction (b)"><span class="cap">Back</span></button>
       <button class="key" id="step" title="Run one instruction (s)"><span class="cap">Step</span></button>
       <button class="key small" id="help-btn" title="Help and shortcuts (?)"><span class="cap">Help</span></button>
       <button class="key small" id="about-btn" title="About this project"><span class="cap">About</span></button>
@@ -94,6 +95,22 @@
         <pre class="listing" id="disasm"></pre>
       </details>
 
+      <details class="module" id="tt-module" open>
+        <summary><span class="engr">Time travel</span><button class="qmark" data-tip="The machine keeps enough history to run backwards. Step back one instruction at a time, jump to just before the last trap, or drag the slider to any point in the recent past. Registers, memory and disk are exactly as they were then. Run carries on from there, quickly replaying everything you typed, back to the present.">?</button></summary>
+        <div class="rec-row tt-keys">
+          <button class="key small" id="tt-back" title="Back one instruction (b)"><span class="cap">&lsaquo; 1</span></button>
+          <button class="key small" id="tt-back-k" title="Back 1,000 instructions"><span class="cap">&lsaquo; 1000</span></button>
+          <button class="key small" id="tt-trap" title="Back to just before the last trap (Shift+B)"><span class="cap">&lsaquo; Last trap</span></button>
+          <button class="key small" id="tt-now" title="Return to the present"><span class="cap">Now &rsaquo;</span></button>
+        </div>
+        <input type="range" id="tt-scrub" min="0" max="1000" value="1000" aria-label="Position in the machine's history">
+        <div class="tt-scale"><span id="tt-oldest">-</span><span id="tt-pos">-</span><span id="tt-front">-</span></div>
+        <p class="note" id="tt-status">Halt the machine, then step back.</p>
+        <div class="rec-row">
+          <button class="key small" id="tt-save" title="Download the whole machine; load it again under Load your own"><span class="cap">Save machine</span></button>
+        </div>
+      </details>
+
       <details class="module" id="regs-module" open>
         <summary><span class="engr">Registers x0-x31</span><button class="qmark" data-tip="Registers are the CPU's 32 scratch slots, each holding one 64-bit number. Everything the CPU computes passes through them. A value lights up briefly when it changes. Names like a0 or sp are their roles: a0-a7 carry function arguments, sp is the stack pointer, ra the return address.">?</button></summary>
         <div class="regs" id="regs"></div>
@@ -134,7 +151,7 @@
       </details>
 
       <details class="module" id="custom-card">
-        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMAC ELF (with an optional disk image), or a Linux Image (with an optional initramfs). The files never leave your browser.">?</button></summary>
+        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMAC ELF (with an optional disk image), a Linux Image (with an optional initramfs), or a machine saved with Save machine (or rvwasm run --save). The files never leave your browser.">?</button></summary>
         <div class="field"><label for="custom-kernel" class="engr">Kernel</label><input type="file" id="custom-kernel"></div>
         <div class="field"><label for="custom-extra" class="engr">Disk or initramfs</label><input type="file" id="custom-extra"></div>
         <button class="key small" id="custom-boot" disabled><span class="cap">Boot it</span></button>
@@ -158,6 +175,8 @@
       <table class="keys-table">
         <tr><td><kbd>Space</kbd></td><td>Halt or resume the CPU</td></tr>
         <tr><td><kbd>S</kbd></td><td>Run one instruction, then halt</td></tr>
+        <tr><td><kbd>B</kbd></td><td>Go back one instruction</td></tr>
+        <tr><td><kbd>Shift</kbd>+<kbd>B</kbd></td><td>Go back to just before the last trap</td></tr>
         <tr><td><kbd>R</kbd></td><td>Start or stop the trace recorder</td></tr>
         <tr><td><kbd>T</kbd></td><td>Show or hide <i>Try these</i></td></tr>
         <tr><td><kbd>?</kbd></td><td>Open these notes</td></tr>
@@ -185,6 +204,7 @@
       <p>A RISC-V computer emulated in your browser. The CPU is written in Rust and compiled to WebAssembly; nothing runs on a server.</p>
       <h3>What's emulated</h3>
       <ul>
+        <li>Time travel: the machine can run backwards, one instruction at a time, because every run is exactly repeatable.</li>
         <li>A 64-bit RISC-V processor: RV64IMAC with Zicsr and Zifencei (integer maths, multiply/divide, atomics, 16-bit compressed instructions, control registers).</li>
         <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
         <li>Sv39 virtual memory with a software TLB.</li>
@@ -192,7 +212,7 @@
       </ul>
       <h3>What it runs</h3>
       <p><b>xv6</b> is MIT's small teaching version of Unix. <b>Linux 6.12</b> boots with BusyBox, a compact set of standard Unix commands. Both are built from source for this CPU.</p>
-      <p>It passes all 196 official riscv-tests for its instruction set, and xv6's own test suite.</p>
+      <p>It passes all 198 official riscv-tests for its instruction set, and xv6's own test suite.</p>
       <p><a href="https://github.com/PS12007/rvwasm">Source code on GitHub</a></p>
     </div>
   </dialog>

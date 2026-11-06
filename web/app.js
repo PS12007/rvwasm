@@ -174,6 +174,8 @@ worker.onmessage = (ev) => {
     case 'trace': onTrace(m.json); break;
     case 'disk': onDisk(m); break;
     case 'disk-file': saveFile(new Blob([m.bytes]), 'fs.img'); break;
+    case 'snapshot-file': saveFile(new Blob([m.bytes]), `${currentImage}.rvsnap`); break;
+    case 'travel': $('tt-status').textContent = m.text; break;
   }
 };
 worker.onerror = (e) => term.write(`\r\n\x1b[31m[rvwasm] worker failed: ${e.message}\x1b[0m\r\n`);
@@ -245,13 +247,16 @@ $('custom-boot').onclick = async () => {
   const extra = extraFile ? new Uint8Array(await extraFile.arrayBuffer()) : null;
   currentImage = 'custom';
   $('disk-card').hidden = true;
-  $('hint').textContent = `Running ${file.name}.`;
+  // A saved machine is already running: there is no boot to wait for.
+  const snapshot = String.fromCharCode(...kernel.slice(0, 15)) === 'rvwasm-snapshot';
+  $('hint').textContent = snapshot ? `Restored ${file.name}. Press Enter for a prompt.` : `Running ${file.name}.`;
   renderCommands();
   resetMeters();
   term.reset();
   setPaused(false);
   startBoot(file.name);
   worker.postMessage({ type: 'boot', image: 'custom', kernel, extra, term: { rows: term.rows, cols: term.cols } });
+  if (snapshot) finishBoot();
 };
 
 // ------------------------------------------------------------ machine keys
@@ -267,6 +272,70 @@ const step = () => { setPaused(true, false); worker.postMessage({ type: 'step', 
 $('reset').onclick = () => boot();
 $('pause').onclick = togglePause;
 $('step').onclick = step;
+
+// ------------------------------------------------------------ time travel
+// The worker keeps checkpoints and the input log, so any recent instruction
+// can be revisited exactly. Travelling halts the machine; Run replays to the
+// present (fast) and carries on.
+
+let ttHistory = [0, 0, 0, 0]; // [oldest reachable, now, present, bytes held]
+let tracingNow = false;
+function travel(msg) {
+  if (booting) return;
+  if (tracingNow) {
+    $('tt-status').textContent = 'Stop the trace recorder first.';
+    return;
+  }
+  setPaused(true, false);
+  $('tt-status').textContent = 'Travelling…';
+  worker.postMessage(msg);
+}
+const back = (count) => travel({ type: 'back', count });
+$('back').onclick = () => back(1);
+$('tt-back').onclick = () => back(1);
+$('tt-back-k').onclick = () => back(1000);
+$('tt-trap').onclick = () => travel({ type: 'back-trap' });
+$('tt-now').onclick = () => travel({ type: 'seek', instret: ttHistory[2] });
+$('tt-save').onclick = () => worker.postMessage({ type: 'snapshot' });
+
+const scrubTarget = () => {
+  const [oldest, , present] = ttHistory;
+  return Math.round(oldest + (present - oldest) * ($('tt-scrub').value / 1000));
+};
+let scrubbing = false;
+$('tt-scrub').oninput = () => {
+  scrubbing = true;
+  $('tt-pos').textContent = `#${fmtCount(scrubTarget())}`;
+};
+$('tt-scrub').onchange = () => {
+  scrubbing = false;
+  travel({ type: 'seek', instret: scrubTarget() });
+};
+
+function renderHistory(m) {
+  if (!m.history) return;
+  ttHistory = m.history;
+  tracingNow = m.tracing;
+  const [oldest, now, present, bytes] = ttHistory;
+  const span = present - oldest;
+  $('tt-oldest').textContent = `#${fmtCount(oldest)}`;
+  $('tt-front').textContent = `#${fmtCount(present)}`;
+  if (!scrubbing) {
+    $('tt-scrub').value = span > 0 ? Math.round(((now - oldest) / span) * 1000) : 1000;
+    $('tt-pos').textContent = m.replaying ? `#${fmtCount(now)}` : 'now';
+  }
+  $('tt-module').classList.toggle('past', m.replaying);
+  // While halted the status shows the result of the last move.
+  if (!m.paused) {
+    const mb = (bytes / 1048576).toFixed(0);
+    $('tt-status').textContent = m.replaying
+      ? 'Replaying back to the present…'
+      : `Recording: ${fmtCount(span)} instructions of history (${mb} MB).`;
+  }
+  for (const id of ['back', 'tt-back', 'tt-back-k', 'tt-trap']) $(id).disabled = m.tracing || now <= oldest;
+  $('tt-scrub').disabled = m.tracing || span <= 0;
+  $('tt-now').disabled = m.tracing || !m.replaying;
+}
 
 // ------------------------------------------------------------ try-these drawer
 
@@ -357,6 +426,7 @@ function resetMeters() {
 
 function renderStats(m) {
   bootProgress(m.instret);
+  renderHistory(m);
   if (m.paused) {
     $('ips').textContent = 'HALT';
     $('ips-unit').textContent = '';
@@ -368,7 +438,12 @@ function renderStats(m) {
     $('ips').textContent = v;
     $('ips-unit').textContent = u;
   }
-  if (!booting) setState(m.paused ? 'halted' : m.idle ? 'idle, waiting for input' : 'running', m.paused);
+  if (!booting) {
+    const state = m.replaying
+      ? (m.paused ? `halted in the past, ${fmtCount(m.history[2] - m.instret)} instructions back` : 'replaying to the present')
+      : m.paused ? 'halted' : m.idle ? 'idle, waiting for input' : 'running';
+    setState(state, m.paused);
+  }
   $('instret').textContent = fmtCount(m.instret);
   $('uptime').textContent = fmtTime(m.uptime);
   $('traps').textContent = fmtCount(m.csrs._traps);
@@ -676,6 +751,8 @@ document.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === ' ') { e.preventDefault(); togglePause(); }
   else if (k === 's') step();
+  else if (e.key === 'B') travel({ type: 'back-trap' });
+  else if (k === 'b') back(1);
   else if (k === 'r') toggleRecord();
   else if (k === 't') setDrawer(!drawerOpen());
   else if (e.key === '?') openSheet('help');
