@@ -167,11 +167,8 @@ jobs:
         with:
           name: benchmarks
           path: build/bench-*.json
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: web
-      # The same site on a gh-pages branch, for Pages set to "Deploy from a
-      # branch" (the deploy job below covers the "GitHub Actions" source).
+      # Pages is set to "Deploy from a branch", so pushing gh-pages is the
+      # deploy. (A deploy-pages job as well would race it and fail.)
       - name: Publish to gh-pages branch
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |
@@ -184,20 +181,3 @@ jobs:
           git commit -q -m "Site build from ${GITHUB_SHA}"
           git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
 
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [web, riscv-tests]
-    runs-on: ubuntu-24.04
-    # Needs Settings -> Pages -> Source: "GitHub Actions". Until that is set,
-    # a failed deploy should not mark the whole run red.
-    continue-on-error: true
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
