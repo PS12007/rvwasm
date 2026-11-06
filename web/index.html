@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>rvwasm</title>
-  <meta name="description" content="A RISC-V computer in your browser: an RV64IMAC emulator in Rust and WebAssembly that boots xv6 and Linux.">
+  <meta name="description" content="A RISC-V computer in your browser: an RV64GC emulator in Rust and WebAssembly that boots xv6 and Linux.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -15,7 +15,7 @@
   <header class="nameplate">
     <div class="badge">
       <span class="badge-name">rvwasm</span>
-      <span class="badge-model">RV64·IMAC system console<br><small>Sv39 · M/S/U · 10 MHz timebase</small></span>
+      <span class="badge-model">RV64·GC system console<br><small>Sv39 · M/S/U · 10 MHz timebase</small></span>
     </div>
     <div class="keys" role="toolbar" aria-label="Machine controls">
       <label class="selector" for="image">
@@ -116,6 +116,11 @@
         <div class="regs" id="regs"></div>
       </details>
 
+      <details class="module" id="fregs-module">
+        <summary><span class="engr">Floating point f0-f31</span><button class="qmark" data-tip="The 32 floating-point registers, for numbers with fractions. Each holds a 64-bit double; a value marked s is a 32-bit single. Floating-point exceptions and the rounding mode are in fcsr, under Control registers. In Linux, try: awk 'BEGIN { print 4 * atan2(1, 1) }'">?</button></summary>
+        <div class="regs" id="fregs"></div>
+      </details>
+
       <details class="module" id="rec-module" open>
         <summary><span class="engr">Trace recorder</span><button class="qmark" data-tip="Records the last instructions the CPU ran, plus every trap and return. Press Record, run a command, press Stop. You get a plain-English summary and can open a zoomable timeline.">?</button></summary>
         <div class="rec-row">
@@ -151,7 +156,7 @@
       </details>
 
       <details class="module" id="custom-card">
-        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64IMAC ELF (with an optional disk image), a Linux Image (with an optional initramfs), or a machine saved with Save machine (or rvwasm run --save). The files never leave your browser.">?</button></summary>
+        <summary><span class="engr">Load your own</span><button class="qmark" data-tip="Boot your own build: a bare-metal RV64GC ELF (with an optional disk image), a Linux Image (with an optional initramfs), or a machine saved with Save machine (or rvwasm run --save). The files never leave your browser.">?</button></summary>
         <div class="field"><label for="custom-kernel" class="engr">Kernel</label><input type="file" id="custom-kernel"></div>
         <div class="field"><label for="custom-extra" class="engr">Disk or initramfs</label><input type="file" id="custom-extra"></div>
         <button class="key small" id="custom-boot" disabled><span class="cap">Boot it</span></button>
@@ -205,14 +210,14 @@
       <h3>What's emulated</h3>
       <ul>
         <li>Time travel: the machine can run backwards, one instruction at a time, because every run is exactly repeatable.</li>
-        <li>A 64-bit RISC-V processor: RV64IMAC with Zicsr and Zifencei (integer maths, multiply/divide, atomics, 16-bit compressed instructions, control registers).</li>
+        <li>A 64-bit RISC-V processor, RV64GC (RV64IMAFDC with Zicsr and Zifencei): integer maths, multiply/divide, atomics, single and double precision floating point, 16-bit compressed instructions and control registers. That is the instruction set standard RISC-V Linux software is built for.</li>
         <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
         <li>Sv39 virtual memory with a software TLB.</li>
         <li>A 16550 serial port (the terminal), CLINT timer, PLIC interrupt controller and a virtio block disk.</li>
       </ul>
       <h3>What it runs</h3>
       <p><b>xv6</b> is MIT's small teaching version of Unix. <b>Linux 6.12</b> boots with BusyBox, a compact set of standard Unix commands. Both are built from source for this CPU.</p>
-      <p>It passes all 198 official riscv-tests for its instruction set, and xv6's own test suite.</p>
+      <p>It passes all 244 official riscv-tests for its instruction set, and xv6's own test suite.</p>
       <p><a href="https://github.com/PS12007/rvwasm">Source code on GitHub</a></p>
     </div>
   </dialog>

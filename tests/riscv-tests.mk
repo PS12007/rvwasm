@@ -1,6 +1,7 @@
-# Builds the official riscv-tests ISA suites we target (RV64IMAC + Zicsr, M/S/U).
-# The base suites are built with -march=rv64ima, as upstream builds them
-# without C, so they also check the 32-bit-only paths; rv64uc adds C.
+# Builds the official riscv-tests ISA suites we target (RV64IMAFDC + Zicsr, M/S/U).
+# The suites are built without C, as upstream builds them, so they also
+# check the 32-bit-only paths; rv64uc adds C. With F and D enabled, the csr
+# test checks that FP stores trap while mstatus.FS is off.
 #
 #   make -f tests/riscv-tests.mk -j$(nproc)
 #
@@ -17,14 +18,14 @@ include $(src_dir)/rv64ua/Makefrag
 include $(src_dir)/rv64si/Makefrag
 include $(src_dir)/rv64mi/Makefrag
 include $(src_dir)/rv64uc/Makefrag
+include $(src_dir)/rv64uf/Makefrag
+include $(src_dir)/rv64ud/Makefrag
 
 RISCV_GCC ?= riscv64-unknown-elf-gcc
-MARCH     := -march=rv64ima_zicsr_zifencei -mabi=lp64
-# The -v env names one FP opcode as data (to detect FP tests); F is enabled
-# for the assembler only in effect: the C code is integer-only.
-VMARCH    := -march=rv64imaf_zicsr_zifencei -mabi=lp64
-rv64uc_MARCH  := -march=rv64imac_zicsr_zifencei -mabi=lp64
-rv64uc_VMARCH := -march=rv64imafc_zicsr_zifencei -mabi=lp64
+MARCH     := -march=rv64imafd_zicsr_zifencei -mabi=lp64
+VMARCH    := $(MARCH)
+rv64uc_MARCH  := -march=rv64imafdc_zicsr_zifencei -mabi=lp64
+rv64uc_VMARCH := $(rv64uc_MARCH)
 OPTS      := -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles
 LIBC_INC  ?= /usr/lib/picolibc/riscv64-unknown-elf/include
 
@@ -37,7 +38,7 @@ $(addprefix $(OUT)/,$($(1)_v_tests)): $(OUT)/$(1)-v-%: $(src_dir)/$(1)/%.S | $(O
 ALL += $(addprefix $(OUT)/,$($(1)_p_tests) $($(1)_v_tests))
 endef
 
-$(foreach s,rv64ui rv64um rv64ua rv64si rv64mi rv64uc,$(eval $(call suite,$(s))))
+$(foreach s,rv64ui rv64um rv64ua rv64si rv64mi rv64uc rv64uf rv64ud,$(eval $(call suite,$(s))))
 
 all: $(ALL)
 $(OUT):

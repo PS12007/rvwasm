@@ -183,6 +183,11 @@ impl Emulator {
         self.cpu.x.to_vec()
     }
 
+    /// f0..f31 (raw bits; single-precision values are NaN-boxed).
+    pub fn fp_registers(&self) -> Vec<u64> {
+        self.cpu.f.to_vec()
+    }
+
     /// Instructions executed per privilege mode: [U, S, M].
     pub fn privilege_counts(&self) -> Vec<f64> {
         let c = &self.cpu.prv_instret;

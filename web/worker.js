@@ -218,6 +218,7 @@ function sendStats(now) {
     idle: emu.idle(),
     pc: emu.pc().toString(16),
     regs: Array.from(emu.registers(), (v) => v.toString(16)),
+    fregs: Array.from(emu.fp_registers(), (v) => v.toString(16)),
     privCounts: Array.from(emu.privilege_counts()),
     csrs: JSON.parse(emu.csrs_json()),
     disasm: emu.disassemble_around_pc(2, 7),

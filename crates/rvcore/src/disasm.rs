@@ -1,4 +1,4 @@
-//! A compact RV64IMAC + Zicsr disassembler for the debug panel and traces.
+//! A compact RV64GC disassembler for the debug panel and traces.
 
 use crate::csr;
 use crate::exec::{imm_b, imm_i, imm_j, imm_s};
@@ -8,8 +8,82 @@ pub const REG_NAMES: [&str; 32] = [
     "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6",
 ];
 
+pub const FREG_NAMES: [&str; 32] = [
+    "ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7", "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5",
+    "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7", "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11",
+];
+
 fn r(n: u32) -> &'static str {
     REG_NAMES[(n & 31) as usize]
+}
+
+fn fr(n: u32) -> &'static str {
+    FREG_NAMES[(n & 31) as usize]
+}
+
+/// The F/D instructions. A static rounding mode is shown after the operands.
+fn disasm_fp(inst: u32) -> Option<String> {
+    let rd = (inst >> 7) & 31;
+    let rs1 = (inst >> 15) & 31;
+    let rs2 = (inst >> 20) & 31;
+    let f3 = (inst >> 12) & 7;
+    let w = match (inst >> 25) & 3 {
+        0 => "s",
+        1 => "d",
+        _ => return None,
+    };
+    let rm = match f3 {
+        7 => "",
+        0 => ", rne",
+        1 => ", rtz",
+        2 => ", rdn",
+        3 => ", rup",
+        4 => ", rmm",
+        _ => ", ?",
+    };
+    let ls = |f3: u32| match f3 {
+        2 => Some("w"),
+        3 => Some("d"),
+        _ => None,
+    };
+    Some(match inst & 0x7f {
+        0x07 => format!("fl{} {}, {}({})", ls(f3)?, fr(rd), imm_i(inst) as i64, r(rs1)),
+        0x27 => format!("fs{} {}, {}({})", ls(f3)?, fr(rs2), imm_s(inst) as i64, r(rs1)),
+        op @ (0x43 | 0x47 | 0x4b | 0x4f) => {
+            let n = ["fmadd", "fmsub", "fnmsub", "fnmadd"][((op - 0x43) / 4) as usize];
+            format!("{n}.{w} {}, {}, {}, {}{rm}", fr(rd), fr(rs1), fr(rs2), fr(inst >> 27))
+        }
+        0x53 => {
+            let ints = ["w", "wu", "l", "lu"];
+            match (inst >> 27, f3, rs2) {
+                (op @ 0..=3, _, _) => {
+                    let n = ["fadd", "fsub", "fmul", "fdiv"][op as usize];
+                    format!("{n}.{w} {}, {}, {}{rm}", fr(rd), fr(rs1), fr(rs2))
+                }
+                (0x0b, _, 0) => format!("fsqrt.{w} {}, {}{rm}", fr(rd), fr(rs1)),
+                (0x04, 0, _) if rs1 == rs2 => format!("fmv.{w} {}, {}", fr(rd), fr(rs1)),
+                (0x04, 1, _) if rs1 == rs2 => format!("fneg.{w} {}, {}", fr(rd), fr(rs1)),
+                (0x04, 2, _) if rs1 == rs2 => format!("fabs.{w} {}, {}", fr(rd), fr(rs1)),
+                (0x04, 0..=2, _) => {
+                    format!("{}.{w} {}, {}, {}", ["fsgnj", "fsgnjn", "fsgnjx"][f3 as usize], fr(rd), fr(rs1), fr(rs2))
+                }
+                (0x05, 0..=1, _) => {
+                    format!("{}.{w} {}, {}, {}", ["fmin", "fmax"][f3 as usize], fr(rd), fr(rs1), fr(rs2))
+                }
+                (0x08, _, 0..=1) => format!("fcvt.{w}.{} {}, {}{rm}", ["s", "d"][rs2 as usize], fr(rd), fr(rs1)),
+                (0x14, 0..=2, _) => {
+                    format!("{}.{w} {}, {}, {}", ["fle", "flt", "feq"][f3 as usize], r(rd), fr(rs1), fr(rs2))
+                }
+                (0x18, _, 0..=3) => format!("fcvt.{}.{w} {}, {}{rm}", ints[rs2 as usize], r(rd), fr(rs1)),
+                (0x1a, _, 0..=3) => format!("fcvt.{w}.{} {}, {}{rm}", ints[rs2 as usize], fr(rd), r(rs1)),
+                (0x1c, 0, 0) => format!("fmv.x.{} {}, {}", if w == "s" { "w" } else { "d" }, r(rd), fr(rs1)),
+                (0x1c, 1, 0) => format!("fclass.{w} {}, {}", r(rd), fr(rs1)),
+                (0x1e, 0, 0) => format!("fmv.{}.x {}, {}", if w == "s" { "w" } else { "d" }, fr(rd), r(rs1)),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    })
 }
 
 /// Size in bytes of the instruction whose first 16 bits are `inst`.
@@ -166,6 +240,9 @@ pub fn disasm(inst: u32, pc: u64) -> String {
                 format!("{} {}, {}, {}", n, r(rd), name, r(rs1))
             }
         }
+        0x07 | 0x27 | 0x43 | 0x47 | 0x4b | 0x4f | 0x53 => {
+            disasm_fp(inst).unwrap_or_else(|| format!("unknown 0x{:08x}", inst))
+        }
         _ => format!("unknown 0x{:08x}", inst),
     }
 }
@@ -181,5 +258,9 @@ mod tests {
         assert_eq!(disasm(0x02a5853b, 0), "mulw a0, a1, a0");
         assert_eq!(disasm(0x1141, 0), "addi sp, sp, -16");
         assert_eq!(disasm(0x0000, 0), "unknown 0x0000");
+        assert_eq!(disasm(0x02b57553, 0), "fadd.d fa0, fa0, fa1");
+        assert_eq!(disasm(0xc2051553, 0), "fcvt.w.d a0, fa0, rtz");
+        assert_eq!(disasm(0x22a50553, 0), "fmv.d fa0, fa0");
+        assert_eq!(disasm(0x2008, 0), "fld fa0, 0(s0)"); // c.fld
     }
 }

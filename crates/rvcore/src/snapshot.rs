@@ -17,7 +17,7 @@ use crate::devices::virtio::VirtioBlk;
 use crate::journal::PAGE;
 
 const STATE_MAGIC: u32 = 0x5257_5354; // "RWST"
-const STATE_VERSION: u32 = 1;
+const STATE_VERSION: u32 = 2;
 const FILE_MAGIC: &[u8; 16] = b"rvwasm-snapshot\0";
 const FILE_VERSION: u32 = 1;
 
@@ -114,6 +114,9 @@ fn visit(cpu: &mut Cpu, io: &mut impl Io) {
     io.u64s(&mut c.x);
     io.u64(&mut c.pc);
     io.u8(&mut c.prv);
+    io.u64s(&mut c.f);
+    io.u8(&mut c.fflags);
+    io.u8(&mut c.frm);
     for f in [
         &mut c.mstatus,
         &mut c.medeleg,

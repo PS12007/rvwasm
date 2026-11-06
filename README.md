@@ -21,16 +21,17 @@ step back, R to record) are under Help.
 
 ## What it emulates
 
-- An RV64IMAC hart with Zicsr and Zifencei: the base integer ISA, multiply/divide, atomics,
-  and 16-bit compressed instructions.
+- An RV64GC hart (RV64IMAFDC with Zicsr and Zifencei): the base integer ISA,
+  multiply/divide, atomics, single- and double-precision floating point, and 16-bit
+  compressed instructions. That is the ISA standard RISC-V Linux distributions target.
 - Machine, supervisor and user mode, with traps, delegation and interrupts.
 - Sv39 paging, with the accessed/dirty bits updated in hardware.
 - A 16550 UART, the CLINT timer, a PLIC, and a virtio-mmio block device, at the same
   addresses as QEMU's `virt` board.
 - The Sstc timer extension, which current xv6 relies on.
 
-It passes all 198 tests in the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
-suites for this ISA (rv64ui, um, ua, uc, si, mi, in both the physical and virtual-memory
+It passes all 244 tests in the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests)
+suites for this ISA (rv64ui, um, ua, uf, ud, uc, si, mi, in both the physical and virtual-memory
 variants), and xv6's own `usertests` runs to the end with ALL TESTS PASSED. CI checks both on
 every push.
 
@@ -39,15 +40,24 @@ they make up 59% of xv6's instructions and 55% of the Linux kernel's and BusyBox
 16-bit instruction is expanded to the 32-bit one it stands for through a 64K-entry table
 built once, so compressed code runs about as fast as uncompressed code.
 
+Floating point is done in integer arithmetic (`softfloat.rs`) rather than with the host's
+floats: all five rounding modes, the exception flags, tininess after rounding, and
+NaN-boxing of single-precision values. Host floats only round to nearest, raise no flags,
+and don't promise the same NaN bits everywhere, and the native and browser builds must give
+bit-identical results for saved machines and time travel to work. Unit tests check it
+against the host on 600,000 random operations, and the other rounding modes against each
+other on 800,000 more.
+
 ## Linux
 
 ![Linux 6.12 booting, then uname, /proc/cpuinfo and top in BusyBox](docs/media/linux.gif)
 
 Pick "Linux 6.12 + BusyBox" in the header. There is no OpenSBI here: when the kernel makes
 an SBI call, the emulator answers it directly, so Linux starts in supervisor mode on a
-device tree the emulator writes at boot. The kernel is built from `tinyconfig` with no
-FPU, and userland is BusyBox on musl, all compiled for rv64imac with soft float. It reaches
-a shell after about 100 million instructions.
+device tree the emulator writes at boot. The kernel is built from `tinyconfig` with its
+FPU support on, and userland is BusyBox on musl, compiled for rv64gc with hardware floating
+point (`awk 'BEGIN { print 4 * atan2(1, 1) }'` goes through musl's libm). It reaches a shell
+after about 100 million instructions.
 
 You can also boot your own build: open "Load your own" in the side panel and pick a
 bare-metal ELF (with an optional disk image), a Linux `Image` (with an optional initramfs),
@@ -163,15 +173,15 @@ make -f tests/riscv-tests.mk -j"$(nproc)"
 python3 -m http.server -d web 8000
 ```
 
-xv6 normally builds for rv64gc, so `build-xv6.sh` compiles a copy with the ISA string
-changed to rv64imac (rv64gc without floating point). `build-linux.sh` shallow-clones Linux
-v6.12, musl 1.2.5 and BusyBox 1.36.1 (the last two from their GitHub mirrors, pinned to exact
-commits) and refuses to finish if a floating-point instruction ends up in the output.
+`build-xv6.sh` builds xv6 with its own, unmodified Makefile (rv64gc). `build-linux.sh`
+shallow-clones Linux v6.12, musl 1.2.5 and BusyBox 1.36.1 (the last two from their GitHub
+mirrors, pinned to exact commits).
 
 ## How it's put together
 
 - `crates/rvcore` is the machine. `cpu.rs` has the run loop, traps and CSRs, `exec.rs` the
-  instruction set, `rvc.rs` the compressed instructions, `mmu.rs` the page-table walker and
+  integer instructions, `fpu.rs` and `softfloat.rs` floating point, `rvc.rs` the compressed
+  instructions, `mmu.rs` the page-table walker and
   TLBs, `devices/` the UART, CLINT, PLIC and virtio disk, and `linux.rs` the SBI firmware and
   device tree. `snapshot.rs` saves and restores the machine, `journal.rs` keeps the old
   contents of written pages, and `timetravel.rs` puts the two together.
@@ -193,7 +203,7 @@ every time. Time travel is built on that.
 
 ## Not done yet
 
-- No floating-point (F/D) instructions, so rv64gc binaries that use floating point won't run.
+- No vector (V) or bit-manipulation (B) extensions.
 - One hart only.
 - Time travel only reaches the recent past (it is bounded by memory), and reloading the
   page starts from scratch unless you load a saved machine.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a minimal RV64IMAC Linux kernel and a BusyBox initramfs for rvwasm.
+# Build a minimal RV64GC Linux kernel and a BusyBox initramfs for rvwasm.
 #
 # Outputs:
 #   build/linux/Image                 kernel (boots in S-mode on rvwasm's built-in SBI)
@@ -11,9 +11,9 @@
 #   musl     github.com/kraj/musl        tag v1.2.5   (mirror of git.musl-libc.org)
 #   BusyBox  github.com/mirror/busybox   tag 1_36_1   (mirror of git.busybox.net)
 #
-# Userspace is soft-float (lp64) with compressed instructions. No distro ships
-# a libc for that, so musl is built here; libgcc and crt files come from the
-# rv64im/lp64 multilib of the bare-metal toolchain (gcc-riscv64-unknown-elf).
+# Userspace is rv64gc with hardware floating point (lp64d), statically linked
+# against musl, which is built here; libgcc and the crt files come from the
+# cross compiler.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,9 +23,8 @@ OUT="$ROOT/build/linux"
 MUSL="$ROOT/build/musl"
 BBOBJ="$ROOT/build/busybox-obj"
 CROSS="${CROSS_COMPILE:-riscv64-linux-gnu-}"
-MARCH="-march=rv64imac_zicsr_zifencei -mabi=lp64"
+MARCH="-march=rv64gc -mabi=lp64d"
 BUSYBOX="${BUSYBOX:-1}"
-SOFT_MULTILIB="${SOFT_MULTILIB:-$(riscv64-unknown-elf-gcc -march=rv64im -mabi=lp64 -print-file-name=libgcc.a | xargs dirname)}"
 JOBS="$(nproc)"
 
 # clone DIR URL TAG COMMIT: shallow clone and check the tag resolves to COMMIT.
@@ -72,16 +71,16 @@ if [ "$BUSYBOX" = 1 ]; then
   if [ ! -f "$MUSL/lib/libc.a" ]; then
     (cd "$SRCDIR/musl" &&
       ./configure --target=riscv64-linux-gnu --prefix="$MUSL" --disable-shared --enable-wrapper=gcc \
-        CC="${CROSS}gcc $MARCH" LIBCC="$SOFT_MULTILIB/libgcc.a" >/dev/null &&
+        CC="${CROSS}gcc $MARCH" LIBCC="$("${CROSS}gcc" $MARCH -print-libgcc-file-name)" >/dev/null &&
       make -j"$JOBS" >/dev/null && make install >/dev/null)
     kmake -s INSTALL_HDR_PATH="$MUSL" headers_install
   fi
-  # Static-only specs: the soft-float multilib has crtbegin.o but no crtbeginS.o.
+  # Static-only specs: link the non-PIE crt files.
   sed -e 's|Scrt1.o|crt1.o|; s|crtbeginS.o|crtbegin.o|; s|crtendS.o|crtend.o|' \
     "$MUSL/lib/musl-gcc.specs" > "$MUSL/lib/rv-static.specs"
   cat > "$MUSL/bin/rv-musl-gcc" <<EOF
 #!/bin/sh
-exec ${CROSS}gcc $MARCH -specs "$MUSL/lib/rv-static.specs" -B$SOFT_MULTILIB/ -static -no-pie "\$@"
+exec ${CROSS}gcc $MARCH -specs "$MUSL/lib/rv-static.specs" -static -no-pie "\$@"
 EOF
   chmod +x "$MUSL/bin/rv-musl-gcc"
 
@@ -132,12 +131,9 @@ fi
 
 "$OBJ/usr/gen_init_cpio" "$LIST" | gzip -9 > "$OUT/initramfs.cpio.gz"
 
-# Everything must be RV64IMAC: no floating-point instructions.
 dump="$("${CROSS}objdump" -d "$CHECK" "$OBJ/vmlinux")"
-if grep -qE '\sf(add|sub|mul|div|ld|sd|lw|sw|mv|cvt)\.' <<<"$dump"; then
-  echo "error: FP instructions found" >&2
-  exit 1
-fi
+fp="$(grep -cE '\sf(add|sub|mul|div|sqrt|madd|msub|nmadd|nmsub|ld|sd|lw|sw|mv|cvt|eq|lt|le|class|sgnj|min|max)\.' <<<"$dump" || true)"
+echo "linux: $fp floating-point instructions"
 total="$(grep -cE '^\s+[0-9a-f]+:\s+[0-9a-f]{4,8}\s' <<<"$dump")"
 short="$(grep -cE '^\s+[0-9a-f]+:\s+[0-9a-f]{4}\s' <<<"$dump")"
 echo "linux: $short of $total instructions are compressed"

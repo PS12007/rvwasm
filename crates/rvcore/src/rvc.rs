@@ -1,8 +1,7 @@
 //! The C extension: each 16-bit instruction is expanded to the 32-bit
 //! instruction it stands for, so execution has one implementation of each
-//! operation. Encodings the spec reserves, and the F/D loads and stores
-//! (this hart has no FPU), expand to `None` and raise an illegal-instruction
-//! trap.
+//! operation. Encodings the spec reserves expand to `None` and raise an
+//! illegal-instruction trap.
 
 #[inline(always)]
 fn bits(c: u32, hi: u32, lo: u32) -> u32 {
@@ -62,6 +61,8 @@ const OP_32: u32 = 0x3b;
 const LOAD: u32 = 0x03;
 const STORE: u32 = 0x23;
 const JALR: u32 = 0x67;
+const LOAD_FP: u32 = 0x07;
+const STORE_FP: u32 = 0x27;
 
 /// Expand a 16-bit instruction (low two bits not `11`) to its 32-bit form.
 pub fn expand(c: u16) -> Option<u32> {
@@ -81,6 +82,11 @@ pub fn expand(c: u16) -> Option<u32> {
             }
             i_type(OP_IMM, 0, creg(c, 2), 2, imm as i32)
         }
+        (0, 1) => {
+            // C.FLD: the offset is encoded as for C.LD
+            let imm = (bits(c, 12, 10) << 3) | (bits(c, 6, 5) << 6);
+            i_type(LOAD_FP, 3, creg(c, 2), creg(c, 7), imm as i32)
+        }
         (0, 2) => {
             // C.LW: uimm[5:3] = c[12:10], uimm[2|6] = c[6:5]
             let imm = (bits(c, 12, 10) << 3) | (bits(c, 6, 6) << 2) | (bits(c, 5, 5) << 6);
@@ -90,6 +96,10 @@ pub fn expand(c: u16) -> Option<u32> {
             // C.LD: uimm[5:3] = c[12:10], uimm[7:6] = c[6:5]
             let imm = (bits(c, 12, 10) << 3) | (bits(c, 6, 5) << 6);
             i_type(LOAD, 3, creg(c, 2), creg(c, 7), imm as i32)
+        }
+        (0, 5) => {
+            let imm = (bits(c, 12, 10) << 3) | (bits(c, 6, 5) << 6);
+            s_type(STORE_FP, 3, creg(c, 7), creg(c, 2), imm) // C.FSD
         }
         (0, 6) => {
             let imm = (bits(c, 12, 10) << 3) | (bits(c, 6, 6) << 2) | (bits(c, 5, 5) << 6);
@@ -173,6 +183,11 @@ pub fn expand(c: u16) -> Option<u32> {
 
         // ---- Quadrant 2
         (2, 0) => i_type(OP_IMM, 1, rd, rd, ((bits(c, 12, 12) << 5) | rs2) as i32), // C.SLLI
+        (2, 1) => {
+            // C.FLDSP: as C.LDSP, but f0 is a valid destination
+            let imm = (bits(c, 12, 12) << 5) | (bits(c, 6, 5) << 3) | (bits(c, 4, 2) << 6);
+            i_type(LOAD_FP, 3, rd, 2, imm as i32)
+        }
         (2, 2) => {
             // C.LWSP: uimm[5] = c[12], uimm[4:2|7:6] = c[6:2]
             if rd == 0 {
@@ -197,6 +212,10 @@ pub fn expand(c: u16) -> Option<u32> {
             (1, _, 0) => i_type(JALR, 0, 1, rd, 0),    // C.JALR
             _ => r_type(OP, 0, 0, rd, rd, rs2),        // C.ADD
         },
+        (2, 5) => {
+            let imm = (bits(c, 12, 10) << 3) | (bits(c, 9, 7) << 6);
+            s_type(STORE_FP, 3, 2, rs2, imm) // C.FSDSP
+        }
         (2, 6) => {
             // C.SWSP: uimm[5:2|7:6] = c[12:7]
             let imm = (bits(c, 12, 9) << 2) | (bits(c, 8, 7) << 6);
@@ -207,7 +226,7 @@ pub fn expand(c: u16) -> Option<u32> {
             let imm = (bits(c, 12, 10) << 3) | (bits(c, 9, 7) << 6);
             s_type(STORE, 3, 2, rs2, imm)
         }
-        // C.FLD, C.FSD, C.FLDSP, C.FSDSP, and quadrant 0 funct3 = 100.
+        // Quadrant 0 funct3 = 100 is reserved.
         _ => return None,
     })
 }
@@ -288,9 +307,16 @@ mod tests {
     }
 
     #[test]
-    fn reserved_and_fp() {
+    fn fp_loads_and_stores() {
+        assert_eq!(expand(0x2008), Some(0x0004_3507)); // c.fld fa0,0(s0) = fld fa0,0(s0)
+        assert_eq!(expand(0xa008), Some(0x00a4_3027)); // c.fsd fa0,0(s0) = fsd fa0,0(s0)
+        assert_eq!(expand(0x2022), Some(0x0081_3007)); // c.fldsp f0,8(sp) = fld f0,8(sp)
+        assert_eq!(expand(0xa402), Some(0x0001_3427)); // c.fsdsp f0,8(sp) = fsd f0,8(sp)
+    }
+
+    #[test]
+    fn reserved() {
         assert_eq!(expand(0x0000), None); // all-zero parcel
-        assert_eq!(expand(0x2008), None); // c.fld
         assert_eq!(expand(0x6101), None); // c.addi16sp with zero immediate
         assert_eq!(expand(0x8002), None); // c.jr x0
         assert_eq!(expand(0x2001), None); // c.addiw x0

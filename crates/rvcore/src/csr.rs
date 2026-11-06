@@ -1,5 +1,9 @@
 //! CSR addresses and bit definitions.
 
+pub const FFLAGS: u16 = 0x001;
+pub const FRM: u16 = 0x002;
+pub const FCSR: u16 = 0x003;
+
 pub const CYCLE: u16 = 0xc00;
 pub const TIME: u16 = 0xc01;
 pub const INSTRET: u16 = 0xc02;
@@ -52,6 +56,8 @@ pub const MSTATUS_MPIE: u64 = 1 << 7;
 pub const MSTATUS_SPP: u64 = 1 << 8;
 pub const MSTATUS_MPP_SHIFT: u64 = 11;
 pub const MSTATUS_MPP: u64 = 3 << 11;
+/// Floating-point state: 0 off, 1 initial, 2 clean, 3 dirty.
+pub const MSTATUS_FS: u64 = 3 << 13;
 pub const MSTATUS_MPRV: u64 = 1 << 17;
 pub const MSTATUS_SUM: u64 = 1 << 18;
 pub const MSTATUS_MXR: u64 = 1 << 19;
@@ -60,6 +66,8 @@ pub const MSTATUS_TW: u64 = 1 << 21;
 pub const MSTATUS_TSR: u64 = 1 << 22;
 pub const MSTATUS_UXL: u64 = 3 << 32;
 pub const MSTATUS_SXL: u64 = 3 << 34;
+/// Read-only summary: set when FS is dirty.
+pub const MSTATUS_SD: u64 = 1 << 63;
 
 pub const MSTATUS_WMASK: u64 = MSTATUS_SIE
     | MSTATUS_MIE
@@ -67,13 +75,15 @@ pub const MSTATUS_WMASK: u64 = MSTATUS_SIE
     | MSTATUS_MPIE
     | MSTATUS_SPP
     | MSTATUS_MPP
+    | MSTATUS_FS
     | MSTATUS_MPRV
     | MSTATUS_SUM
     | MSTATUS_MXR
     | MSTATUS_TVM
     | MSTATUS_TW
     | MSTATUS_TSR;
-pub const SSTATUS_MASK: u64 = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL;
+pub const SSTATUS_MASK: u64 =
+    MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_SPP | MSTATUS_FS | MSTATUS_SUM | MSTATUS_MXR | MSTATUS_UXL | MSTATUS_SD;
 
 // interrupt bits (mip / mie)
 pub const IRQ_SSI: u64 = 1;
@@ -94,8 +104,8 @@ pub const ALL_INTS: u64 = S_INTS | MIP_MSIP | MIP_MTIP | MIP_MEIP;
 pub const MENVCFG_STCE: u64 = 1 << 63;
 pub const MENVCFG_ADUE: u64 = 1 << 61;
 
-/// misa: RV64 (MXL=2) with I, M, A, C, S, U.
-pub const MISA_VALUE: u64 = (2 << 62) | misa_bits(b"IMACSU");
+/// misa: RV64 (MXL=2) with I, M, A, F, D, C, S, U: RV64GC.
+pub const MISA_VALUE: u64 = (2 << 62) | misa_bits(b"IMAFDCSU");
 
 const fn misa_bits(exts: &[u8]) -> u64 {
     let mut v = 0;
@@ -110,6 +120,9 @@ const fn misa_bits(exts: &[u8]) -> u64 {
 /// Human-readable CSR names for the debugger panel and trace viewer.
 pub fn name(addr: u16) -> Option<&'static str> {
     Some(match addr {
+        FFLAGS => "fflags",
+        FRM => "frm",
+        FCSR => "fcsr",
         CYCLE => "cycle",
         TIME => "time",
         INSTRET => "instret",

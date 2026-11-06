@@ -8,6 +8,9 @@ const store = {
 };
 const REG_NAMES = ['zero', 'ra', 'sp', 'gp', 'tp', 't0', 't1', 't2', 's0', 's1', 'a0', 'a1', 'a2', 'a3', 'a4', 'a5',
   'a6', 'a7', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10', 's11', 't3', 't4', 't5', 't6'];
+const FREG_NAMES = ['ft0', 'ft1', 'ft2', 'ft3', 'ft4', 'ft5', 'ft6', 'ft7', 'fs0', 'fs1', 'fa0', 'fa1', 'fa2', 'fa3',
+  'fa4', 'fa5', 'fa6', 'fa7', 'fs2', 'fs3', 'fs4', 'fs5', 'fs6', 'fs7', 'fs8', 'fs9', 'fs10', 'fs11', 'ft8', 'ft9',
+  'ft10', 'ft11'];
 const MODE_NAMES = { 0: 'user program', 1: 'kernel', 3: 'machine firmware' };
 
 // ------------------------------------------------------------ guests
@@ -414,6 +417,38 @@ const regEls = REG_NAMES.map((name) => {
   $('regs').appendChild(d);
   return d.lastChild;
 });
+// f registers hold raw IEEE bits; a single-precision value is NaN-boxed
+// (upper 32 bits all ones) and is shown with an "s".
+const fpView = new DataView(new ArrayBuffer(8));
+function fpText(h) {
+  const v = BigInt(`0x${h}`);
+  let x;
+  let single = false;
+  if (v >> 32n === 0xffffffffn) {
+    fpView.setUint32(0, Number(v & 0xffffffffn));
+    x = fpView.getFloat32(0);
+    single = true;
+  } else {
+    fpView.setBigUint64(0, v);
+    x = fpView.getFloat64(0);
+  }
+  const a = Math.abs(x);
+  let t;
+  if (!Number.isFinite(x)) t = String(x);
+  else if (x === 0) t = Object.is(x, -0) ? '-0' : '0';
+  else if (a >= 1e9 || a < 1e-5) t = x.toExponential(single ? 5 : 8);
+  else t = String(+x.toPrecision(single ? 7 : 12));
+  return single ? `${t} <span class="z">s</span>` : t;
+}
+const fregEls = FREG_NAMES.map((name) => {
+  const d = document.createElement('div');
+  d.className = 'reg';
+  d.innerHTML = `<span class="n">${name}</span><span class="v">0</span>`;
+  $('fregs').appendChild(d);
+  return d.lastChild;
+});
+let prevFregs = [];
+
 let prevRegs = [];
 let prevPriv = [];
 let privShare = [0, 0, 0];
@@ -421,6 +456,7 @@ let privShare = [0, 0, 0];
 function resetMeters() {
   prevPriv = [];
   prevRegs = [];
+  prevFregs = [];
   privShare = [0, 0, 0];
 }
 
@@ -471,6 +507,12 @@ function renderStats(m) {
     regEls[i].classList.toggle('changed', changed);
   });
   prevRegs = m.regs;
+  m.fregs.forEach((h, i) => {
+    const changed = prevFregs.length > 0 && prevFregs[i] !== h;
+    if (prevFregs[i] !== h) fregEls[i].innerHTML = fpText(h);
+    fregEls[i].classList.toggle('changed', changed);
+  });
+  prevFregs = m.fregs;
 
   $('pc').innerHTML = ledHex(m.pc);
   $('disasm').innerHTML = m.disasm.trim().split('\n').map((l) => {

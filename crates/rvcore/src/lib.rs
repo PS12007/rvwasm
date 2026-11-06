@@ -1,7 +1,7 @@
-//! rvcore: an RV64IMAC + Zicsr + Zifencei emulator.
+//! rvcore: an RV64GC (RV64IMAFDC + Zicsr + Zifencei) emulator.
 //!
 //! The machine follows QEMU's `virt` layout closely enough to boot xv6-riscv
-//! unmodified (apart from building it without floating point).
+//! unmodified.
 
 // Bus errors carry no payload: the CPU turns them into access faults.
 #![allow(clippy::result_unit_err)]
@@ -15,11 +15,13 @@ pub mod disasm;
 pub mod elf;
 mod exec;
 pub mod fdt;
+mod fpu;
 pub mod journal;
 pub mod linux;
 pub mod mmu;
 pub mod rvc;
 pub mod snapshot;
+pub mod softfloat;
 pub mod timetravel;
 pub mod trace;
 

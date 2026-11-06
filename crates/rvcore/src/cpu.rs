@@ -51,6 +51,11 @@ pub type SbiHandler = fn(&mut Cpu) -> bool;
 pub struct Cpu {
     pub x: [u64; 32],
     pub pc: u64,
+    /// Floating-point registers (single-precision values NaN-boxed).
+    pub f: [u64; 32],
+    /// fcsr: accrued exception flags and the dynamic rounding mode.
+    pub fflags: u8,
+    pub frm: u8,
     pub prv: u8,
     pub bus: Bus,
 
@@ -132,6 +137,9 @@ impl Cpu {
         let mut cpu = Cpu {
             x: [0; 32],
             pc: crate::bus::RAM_BASE,
+            f: [0; 32],
+            fflags: 0,
+            frm: 0,
             prv: PRV_M,
             bus,
             mstatus: (2 << 32) | (2 << 34),
@@ -503,6 +511,10 @@ impl Cpu {
 
     pub fn csr_read(&mut self, addr: u16) -> Option<u64> {
         Some(match addr {
+            FFLAGS | FRM | FCSR if !self.fp_enabled() => return None,
+            FFLAGS => self.fflags as u64,
+            FRM => self.frm as u64,
+            FCSR => (self.frm as u64) << 5 | self.fflags as u64,
             CYCLE | MCYCLE => self.cycle().wrapping_add(self.mcycle_off),
             INSTRET | MINSTRET => self.instret.wrapping_add(self.minstret_off),
             TIME => {
@@ -552,6 +564,20 @@ impl Cpu {
     }
 
     pub fn csr_write(&mut self, addr: u16, val: u64) -> Option<()> {
+        if let FFLAGS | FRM | FCSR = addr {
+            // Changes nothing outside the FPU, so no need to leave the run loop.
+            self.csr_read(addr)?;
+            match addr {
+                FFLAGS => self.fflags = val as u8 & 0x1f,
+                FRM => self.frm = val as u8 & 7,
+                _ => {
+                    self.fflags = val as u8 & 0x1f;
+                    self.frm = (val >> 5) as u8 & 7;
+                }
+            }
+            self.mstatus |= MSTATUS_FS;
+            return Some(());
+        }
         match addr {
             MCYCLE => self.mcycle_off = val.wrapping_sub(self.cycle()),
             MINSTRET => {
@@ -623,7 +649,8 @@ impl Cpu {
     }
 
     fn mstatus_read(&self) -> u64 {
-        self.mstatus | (2 << 32) | (2 << 34)
+        let sd = if self.mstatus & MSTATUS_FS == MSTATUS_FS { MSTATUS_SD } else { 0 };
+        self.mstatus | (2 << 32) | (2 << 34) | sd
     }
 
     fn sstatus(&self) -> u64 {
@@ -642,9 +669,9 @@ impl Cpu {
 
     /// Name and value of every CSR the UI shows.
     pub fn csr_dump(&mut self) -> Vec<(&'static str, u64)> {
-        const SHOWN: [u16; 22] = [
+        const SHOWN: [u16; 23] = [
             MSTATUS, MISA, MEDELEG, MIDELEG, MIE, MIP, MTVEC, MEPC, MCAUSE, MTVAL, MSCRATCH, MENVCFG, SSTATUS, STVEC,
-            SEPC, SCAUSE, STVAL, SSCRATCH, SATP, STIMECMP, TIME, INSTRET,
+            SEPC, SCAUSE, STVAL, SSCRATCH, SATP, STIMECMP, TIME, INSTRET, FCSR,
         ];
         SHOWN.iter().map(|&a| (csr::name(a).unwrap_or("?"), self.csr_read(a).unwrap_or(0))).collect()
     }

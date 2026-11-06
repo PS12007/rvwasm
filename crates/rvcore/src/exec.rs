@@ -1,5 +1,6 @@
-//! RV64IMAC + Zicsr + Zifencei instruction execution. Compressed
-//! instructions arrive here already expanded by `rvc::expand`.
+//! RV64IMAC + Zicsr + Zifencei instruction execution (F and D are in
+//! `fpu`). Compressed instructions arrive here already expanded by
+//! `rvc::expand`.
 
 use crate::cpu::{cause, Cpu, Trap, PRV_M, PRV_S, PRV_U};
 use crate::csr::*;
@@ -268,6 +269,8 @@ impl Cpu {
             },
             // AMO
             0x2f => return self.exec_amo(inst),
+            // LOAD-FP, STORE-FP, the fused multiply-adds, OP-FP
+            0x07 | 0x27 | 0x43 | 0x47 | 0x4b | 0x4f | 0x53 => return self.exec_fp(inst),
             // SYSTEM
             0x73 => return self.exec_system(inst, pc),
             _ => return illegal(inst),
