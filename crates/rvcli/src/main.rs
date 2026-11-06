@@ -2,6 +2,7 @@
 //!
 //!   rvwasm test <elf>...                      run riscv-tests binaries
 //!   rvwasm run <kernel> [--disk fs.img] ...   boot a kernel on the console
+//!   rvwasm run <snapshot> ...                 carry on from a saved machine
 //!   rvwasm bench                              native benchmark suite
 
 use std::io::{Read, Write};
@@ -18,9 +19,10 @@ fn usage() -> ExitCode {
         "usage:
   rvwasm test <elf>...
   rvwasm run <kernel.elf> [--disk FILE] [--ram MB] [--linux] [--initrd FILE]
-             [--max-cycles N] [--trace N --trace-out FILE]
+             [--max-cycles N] [--trace N --trace-out FILE] [--save FILE]
              [--script TEXT --expect TEXT]   (non-interactive: type TEXT at the
                                               first prompt, exit 0 once EXPECT is seen)
+  rvwasm run <snapshot> [...]                 resume a machine saved with --save
   rvwasm bench [--bench-dir DIR] [--xv6 DIR] [--reps N] [--json FILE]"
     );
     ExitCode::from(2)
@@ -80,6 +82,8 @@ pub struct Opts {
     pub max_cycles: u64,
     pub trace: usize,
     pub trace_out: Option<String>,
+    /// Write a snapshot of the machine here when the run ends.
+    pub save: Option<String>,
     pub rest: Vec<(String, String)>,
     pub flags: Vec<String>,
 }
@@ -94,6 +98,7 @@ pub fn parse_opts(args: &[String]) -> Option<Opts> {
         max_cycles: u64::MAX,
         trace: 0,
         trace_out: None,
+        save: None,
         rest: vec![],
         flags: vec![],
     };
@@ -107,6 +112,7 @@ pub fn parse_opts(args: &[String]) -> Option<Opts> {
             "--max-cycles" => o.max_cycles = it.next()?.parse().ok()?,
             "--trace" => o.trace = it.next()?.parse().ok()?,
             "--trace-out" => o.trace_out = Some(it.next()?.clone()),
+            "--save" => o.save = Some(it.next()?.clone()),
             "--json" => o.flags.push("json".into()),
             s if s.starts_with("--") => o.rest.push((s[2..].to_string(), it.next()?.clone())),
             s => o.kernel = s.to_string(),
@@ -117,6 +123,9 @@ pub fn parse_opts(args: &[String]) -> Option<Opts> {
 
 pub fn make_machine(o: &Opts) -> Result<Cpu, String> {
     let kernel = std::fs::read(&o.kernel).map_err(|e| format!("{}: {e}", o.kernel))?;
+    if rvcore::snapshot::is_snapshot(&kernel) {
+        return Cpu::from_snapshot(&kernel).map_err(|e| format!("{}: {e}", o.kernel));
+    }
     let disk = match &o.disk {
         Some(p) => Some(std::fs::read(p).map_err(|e| format!("{p}: {e}"))?),
         None => None,
@@ -242,7 +251,23 @@ fn cmd_run(args: &[String]) -> ExitCode {
         cpu.pc
     );
     write_trace(&o, &cpu);
-    ExitCode::SUCCESS
+    save_snapshot(&o, &mut cpu)
+}
+
+/// Write the machine to `--save FILE`, if given.
+fn save_snapshot(o: &Opts, cpu: &mut Cpu) -> ExitCode {
+    let Some(path) = &o.save else { return ExitCode::SUCCESS };
+    let snap = cpu.save_snapshot();
+    match std::fs::write(path, &snap) {
+        Ok(()) => {
+            eprintln!("[rvwasm] saved the machine to {path} ({:.1} MiB)", snap.len() as f64 / (1 << 20) as f64);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("could not write snapshot: {e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn write_trace(o: &Opts, cpu: &Cpu) {
@@ -273,7 +298,8 @@ fn cmd_run_script(o: &Opts, script: &str, expect: &str, prompt: String) -> ExitC
     let start = Instant::now();
     let mut stdout = std::io::stdout();
     let mut seen: Vec<u8> = Vec::new();
-    let mut typed = script.is_empty();
+    // An empty prompt types right away (e.g. resuming a snapshot at a shell).
+    let mut typed = script.is_empty() || prompt.is_empty();
     let mut pending: std::collections::VecDeque<u8> = script.bytes().collect();
     while cpu.cycle() < o.max_cycles && !cpu.halted {
         cpu.run(1_000_000);
@@ -297,7 +323,7 @@ fn cmd_run_script(o: &Opts, script: &str, expect: &str, prompt: String) -> ExitC
                 start.elapsed().as_secs_f64()
             );
             write_trace(o, &cpu);
-            return ExitCode::SUCCESS;
+            return save_snapshot(o, &mut cpu);
         }
         // Keep the search window bounded.
         if seen.len() > 1 << 16 {

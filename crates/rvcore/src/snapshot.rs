@@ -4,7 +4,9 @@
 //! boot ROM: harts registers and CSRs, device registers, the TLB and the
 //! timing counters. That is a few tens of KiB, cheap enough to take often;
 //! `timetravel` pairs it with journaled pages. A snapshot file adds the
-//! memory contents (all-zero pages are left out).
+//! memory contents, each page left out (all zeros), stored as one repeated
+//! byte, run-length encoded (such as xv6's free pages: a pointer, then 1s)
+//! or as is, whichever is smallest.
 //!
 //! Both directions walk one field list (`visit`), so they cannot disagree on
 //! the layout.
@@ -235,6 +237,11 @@ fn visit_bus(b: &mut Bus, io: &mut impl Io) {
     io.bool(&mut b.mmio_dirty);
 }
 
+/// Whether `bytes` look like a `save_snapshot` file.
+pub fn is_snapshot(bytes: &[u8]) -> bool {
+    bytes.starts_with(FILE_MAGIC)
+}
+
 impl Cpu {
     /// Everything but RAM, the disk and the ROM. Pending UART output is not
     /// included: it belongs to the host once produced.
@@ -322,13 +329,49 @@ impl Cpu {
     }
 }
 
-/// Memory as its length, then (page number, page) for each page that is not
-/// all zeros, ended by u64::MAX.
+// The top two bits of a page number say how the page is stored.
+const KIND_SHIFT: u32 = 62;
+const RAW: u64 = 0; // 4096 bytes follow
+const FILL: u64 = 1; // one byte value repeated; the byte follows
+const RLE: u64 = 2; // run-length encoded: length, then (run - 1, byte) pairs
+
+/// (run - 1, byte) pairs; runs are at most 256 bytes.
+fn rle(page: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < page.len() {
+        let b = page[i];
+        let mut n = 1;
+        while i + n < page.len() && n < 256 && page[i + n] == b {
+            n += 1;
+        }
+        out.push((n - 1) as u8);
+        out.push(b);
+        i += n;
+    }
+    out
+}
+
+/// Memory as its length, then each page that is not all zeros as (page
+/// number | kind << 62, contents), ended by u64::MAX.
 fn write_pages(w: &mut Writer, mem: &[u8]) {
     w.u64(&mut (mem.len() as u64));
     for (i, page) in mem.chunks(PAGE).enumerate() {
-        if page.iter().any(|&b| b != 0) {
-            w.u64(&mut (i as u64));
+        let i = i as u64;
+        let first = page[0];
+        if page.iter().all(|&b| b == first) {
+            if first != 0 {
+                w.u64(&mut (i | FILL << KIND_SHIFT));
+                w.u64(&mut (first as u64));
+            }
+            continue;
+        }
+        let mut packed = rle(page);
+        if packed.len() + 8 < page.len() {
+            w.u64(&mut (i | RLE << KIND_SHIFT));
+            w.bytes(&mut packed);
+        } else {
+            w.u64(&mut (i | RAW << KIND_SHIFT));
             w.0.extend_from_slice(page);
         }
     }
@@ -351,12 +394,40 @@ fn read_pages(r: &mut Reader, mem: &mut Vec<u8>) -> Result<(), String> {
         if page == u64::MAX {
             return Ok(());
         }
+        let kind = page >> KIND_SHIFT;
+        let page = page & ((1 << KIND_SHIFT) - 1);
         let start = (page as usize).checked_mul(PAGE).filter(|&s| s < mem.len()).ok_or("bad page in snapshot")?;
         let end = (start + PAGE).min(mem.len());
+        let dst = &mut mem[start..end];
+        match kind {
+            FILL => {
+                let mut b = 0u64;
+                r.u64(&mut b);
+                dst.fill(b as u8);
+                continue;
+            }
+            RLE => {
+                let mut packed = Vec::new();
+                r.bytes(&mut packed);
+                let mut at = 0;
+                for pair in packed.chunks_exact(2) {
+                    let n = pair[0] as usize + 1;
+                    let run = dst.get_mut(at..at + n).ok_or("bad page in snapshot")?;
+                    run.fill(pair[1]);
+                    at += n;
+                }
+                if at != dst.len() {
+                    return Err("bad page in snapshot".into());
+                }
+                continue;
+            }
+            RAW => {}
+            _ => return Err("bad page in snapshot".into()),
+        }
         let data = r.take(end - start);
         if data.len() != end - start {
             return Err("snapshot is truncated".into());
         }
-        mem[start..end].copy_from_slice(data);
+        dst.copy_from_slice(data);
     }
 }
