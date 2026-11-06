@@ -410,10 +410,11 @@ fn read_pages(r: &mut Reader, mem: &mut Vec<u8>) -> Result<(), String> {
                 let mut packed = Vec::new();
                 r.bytes(&mut packed);
                 let mut at = 0;
-                for pair in packed.chunks_exact(2) {
-                    let n = pair[0] as usize + 1;
+                let (pairs, _) = packed.as_chunks::<2>();
+                for &[len, byte] in pairs {
+                    let n = len as usize + 1;
                     let run = dst.get_mut(at..at + n).ok_or("bad page in snapshot")?;
-                    run.fill(pair[1]);
+                    run.fill(byte);
                     at += n;
                 }
                 if at != dst.len() {
