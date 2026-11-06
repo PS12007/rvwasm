@@ -94,8 +94,8 @@ pub const ALL_INTS: u64 = S_INTS | MIP_MSIP | MIP_MTIP | MIP_MEIP;
 pub const MENVCFG_STCE: u64 = 1 << 63;
 pub const MENVCFG_ADUE: u64 = 1 << 61;
 
-/// misa: RV64 (MXL=2) with I, M, A, S, U.
-pub const MISA_VALUE: u64 = (2 << 62) | misa_bits(b"IMASU");
+/// misa: RV64 (MXL=2) with I, M, A, C, S, U.
+pub const MISA_VALUE: u64 = (2 << 62) | misa_bits(b"IMACSU");
 
 const fn misa_bits(exts: &[u8]) -> u64 {
     let mut v = 0;

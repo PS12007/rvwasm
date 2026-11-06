@@ -1,4 +1,5 @@
-//! RV64IMA + Zicsr + Zifencei instruction execution.
+//! RV64IMAC + Zicsr + Zifencei instruction execution. Compressed
+//! instructions arrive here already expanded by `rvc::expand`.
 
 use crate::cpu::{cause, Cpu, Trap, PRV_M, PRV_S, PRV_U};
 use crate::csr::*;
@@ -91,18 +92,20 @@ fn remu(a: u64, b: u64) -> u64 {
 }
 
 impl Cpu {
+    /// With the C extension instructions only need 2-byte alignment, and every
+    /// jump target is already even (JALR clears bit 0), so jumps never fault.
     #[inline(always)]
     fn jump(&mut self, target: u64) -> Result<(), Trap> {
-        if target & 3 != 0 {
-            return Err(Trap::new(cause::INST_MISALIGNED, target));
-        }
         self.pc = target;
         Ok(())
     }
 
+    /// Execute a 32-bit instruction (or the expansion of a 16-bit one) at `pc`;
+    /// `len` is the size of the encoding in memory, 2 or 4.
     #[inline(always)]
-    pub(crate) fn execute(&mut self, inst: u32, pc: u64) -> Result<(), Trap> {
-        self.pc = pc.wrapping_add(4);
+    pub(crate) fn execute(&mut self, inst: u32, pc: u64, len: u64) -> Result<(), Trap> {
+        let next = pc.wrapping_add(len);
+        self.pc = next;
         let x = &self.x;
         match inst & 0x7f {
             // LUI
@@ -113,7 +116,7 @@ impl Cpu {
             0x6f => {
                 let t = pc.wrapping_add(imm_j(inst));
                 self.jump(t)?;
-                self.x[rd(inst)] = pc.wrapping_add(4);
+                self.x[rd(inst)] = next;
             }
             // JALR
             0x67 => {
@@ -122,7 +125,7 @@ impl Cpu {
                 }
                 let t = x[rs1(inst)].wrapping_add(imm_i(inst)) & !1;
                 self.jump(t)?;
-                self.x[rd(inst)] = pc.wrapping_add(4);
+                self.x[rd(inst)] = next;
             }
             // BRANCH
             0x63 => {

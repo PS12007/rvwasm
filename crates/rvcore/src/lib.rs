@@ -1,7 +1,7 @@
-//! rvcore: an RV64IMA + Zicsr + Zifencei emulator.
+//! rvcore: an RV64IMAC + Zicsr + Zifencei emulator.
 //!
 //! The machine follows QEMU's `virt` layout closely enough to boot xv6-riscv
-//! unmodified (apart from building it without the C extension).
+//! unmodified (apart from building it without floating point).
 
 // Bus errors carry no payload: the CPU turns them into access faults.
 #![allow(clippy::result_unit_err)]
@@ -17,6 +17,7 @@ mod exec;
 pub mod fdt;
 pub mod linux;
 pub mod mmu;
+pub mod rvc;
 pub mod trace;
 
 pub use bus::{Bus, RAM_BASE};

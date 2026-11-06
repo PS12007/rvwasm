@@ -1,6 +1,10 @@
 //! WebAssembly bindings: a thin `Emulator` class for the browser worker.
 
-use rvcore::{build_machine, disasm::disasm, Cpu, MachineConfig};
+use rvcore::{
+    build_machine,
+    disasm::{disasm, inst_len},
+    Cpu, MachineConfig,
+};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -127,20 +131,64 @@ impl Emulator {
         s
     }
 
-    /// Disassembly of `count` instructions starting at `pc - 4*before`.
+    /// Disassembly of `count` instructions, `before` of them ahead of the pc.
     /// One line per instruction: "addr|hex|text|symbol".
     pub fn disassemble_around_pc(&mut self, before: u32, count: u32) -> String {
-        let start = self.cpu.pc.wrapping_sub(4 * before as u64);
+        let pc = self.cpu.pc;
+        let start = self.start_before(pc, before as usize);
         let mut out = String::new();
-        for i in 0..count as u64 {
-            let a = start.wrapping_add(4 * i);
-            let line = match self.cpu.peek_virt(a, 4) {
-                Some(w) => format!("{:x}|{:08x}|{}|{}\n", a, w, disasm(w as u32, a), self.symbol_for(a)),
-                None => format!("{:x}||<unmapped>|\n", a),
-            };
-            out.push_str(&line);
+        let mut a = start;
+        for _ in 0..count {
+            match self.cpu.peek_virt(a, 2) {
+                Some(lo) => {
+                    let w = if lo & 3 == 3 { lo | self.cpu.peek_virt(a + 2, 2).unwrap_or(0) << 16 } else { lo };
+                    let hex = if lo & 3 == 3 { format!("{w:08x}") } else { format!("{w:04x}") };
+                    out.push_str(&format!(
+                        "{:x}|{}|{}|{}
+",
+                        a,
+                        hex,
+                        disasm(w as u32, a),
+                        self.symbol_for(a)
+                    ));
+                    a = a.wrapping_add(inst_len(w as u32));
+                }
+                None => {
+                    out.push_str(&format!(
+                        "{:x}||<unmapped>|
+",
+                        a
+                    ));
+                    a = a.wrapping_add(4);
+                }
+            }
         }
         out
+    }
+
+    /// Where to start decoding so that `before` instructions come ahead of
+    /// `pc`. With 16- and 32-bit instructions mixed, walking backwards is
+    /// ambiguous, so decode forward from a few candidate starting points and
+    /// take the first that lands exactly on `pc`.
+    fn start_before(&mut self, pc: u64, before: usize) -> u64 {
+        if before == 0 {
+            return pc;
+        }
+        for back in (before as u64)..=(4 * before as u64 + 8) {
+            let mut a = pc.wrapping_sub(2 * back);
+            let mut starts = Vec::new();
+            while a < pc {
+                starts.push(a);
+                match self.cpu.peek_virt(a, 2) {
+                    Some(lo) => a = a.wrapping_add(inst_len(lo as u32)),
+                    None => break,
+                }
+            }
+            if a == pc && starts.len() >= before {
+                return starts[starts.len() - before];
+            }
+        }
+        pc.wrapping_sub(4 * before as u64)
     }
 
     fn symbol_for(&self, addr: u64) -> String {

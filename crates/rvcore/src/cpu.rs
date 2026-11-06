@@ -232,7 +232,7 @@ impl Cpu {
     pub fn step<const TRACE: bool>(&mut self) {
         let pc = self.pc;
         self.instret += 1;
-        let inst = match self.fetch(pc) {
+        let raw = match self.fetch(pc) {
             Ok(i) => i,
             Err(t) => {
                 self.take_trap(t.cause, t.tval, pc);
@@ -240,9 +240,24 @@ impl Cpu {
             }
         };
         if TRACE {
-            self.trace.record_inst(self.cycle(), pc, inst, self.prv);
+            self.trace.record_inst(self.cycle(), pc, raw, self.prv);
         }
-        if let Err(t) = self.execute(inst, pc) {
+        let r = if raw & 3 == 3 {
+            self.execute(raw, pc, 4)
+        } else {
+            match crate::rvc::expand(raw as u16) {
+                Some(inst) => self.execute(inst, pc, 2).map_err(|t| {
+                    // An illegal compressed instruction reports its own 16 bits.
+                    if t.cause == cause::ILLEGAL_INST {
+                        Trap::new(t.cause, raw as u64)
+                    } else {
+                        t
+                    }
+                }),
+                None => Err(Trap::new(cause::ILLEGAL_INST, raw as u64)),
+            }
+        };
+        if let Err(t) = r {
             self.take_trap(t.cause, t.tval, pc);
         }
         self.x[0] = 0;
@@ -528,7 +543,7 @@ impl Cpu {
             SCOUNTEREN => self.scounteren = val & 0xffff_ffff,
             SENVCFG => self.senvcfg = val & 1,
             SSCRATCH => self.sscratch = val,
-            SEPC => self.sepc = val & !3,
+            SEPC => self.sepc = val & !1,
             SCAUSE => self.scause = val,
             STVAL => self.stval = val,
             SIP => {
@@ -553,7 +568,7 @@ impl Cpu {
             MCOUNTEREN => self.mcounteren = val & 0xffff_ffff,
             MENVCFG => self.menvcfg = val & (MENVCFG_STCE | MENVCFG_ADUE | 1),
             MSCRATCH => self.mscratch = val,
-            MEPC => self.mepc = val & !3,
+            MEPC => self.mepc = val & !1,
             MCAUSE => self.mcause = val,
             MTVAL => self.mtval = val,
             MIP => {

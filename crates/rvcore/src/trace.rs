@@ -78,6 +78,8 @@ impl Trace {
 
     #[inline]
     pub fn record_inst(&mut self, cycle: u64, pc: u64, inst: u32, prv: u8) {
+        // A 16-bit instruction is stored without the bytes that follow it.
+        let inst = if inst & 3 == 3 { inst } else { inst & 0xffff };
         let r = InstRecord { cycle, pc, inst, prv };
         if self.insts.len() < self.capacity {
             self.insts.push(r);
@@ -137,7 +139,11 @@ impl Trace {
             if i > 0 {
                 s.push(',');
             }
-            let _ = write!(s, "[{},\"{:x}\",\"{:08x}\",{}]", r.cycle, r.pc, r.inst, r.prv);
+            if r.inst & 3 == 3 {
+                let _ = write!(s, "[{},\"{:x}\",\"{:08x}\",{}]", r.cycle, r.pc, r.inst, r.prv);
+            } else {
+                let _ = write!(s, "[{},\"{:x}\",\"{:04x}\",{}]", r.cycle, r.pc, r.inst & 0xffff, r.prv);
+            }
         }
         s.push_str("],\"events\":[");
         for (n, e) in self.events().iter().filter(|e| e.cycle >= first).enumerate() {

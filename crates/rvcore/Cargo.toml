@@ -1,6 +1,6 @@
 [package]
 name = "rvcore"
-description = "RV64IMA + Zicsr emulator core: CPU, Sv39 MMU, CLINT, PLIC, UART, virtio-blk"
+description = "RV64IMAC + Zicsr emulator core: CPU, Sv39 MMU, CLINT, PLIC, UART, virtio-blk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

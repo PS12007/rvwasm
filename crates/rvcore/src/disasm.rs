@@ -1,4 +1,4 @@
-//! A compact RV64IMA + Zicsr disassembler for the debug panel and traces.
+//! A compact RV64IMAC + Zicsr disassembler for the debug panel and traces.
 
 use crate::csr;
 use crate::exec::{imm_b, imm_i, imm_j, imm_s};
@@ -12,8 +12,24 @@ fn r(n: u32) -> &'static str {
     REG_NAMES[(n & 31) as usize]
 }
 
-/// Disassemble one instruction located at `pc`.
+/// Size in bytes of the instruction whose first 16 bits are `inst`.
+pub fn inst_len(inst: u32) -> u64 {
+    if inst & 3 == 3 {
+        4
+    } else {
+        2
+    }
+}
+
+/// Disassemble one instruction located at `pc`. A 16-bit instruction (low
+/// two bits not `11`) is shown as the 32-bit instruction it expands to.
 pub fn disasm(inst: u32, pc: u64) -> String {
+    if inst & 3 != 3 {
+        return match crate::rvc::expand(inst as u16) {
+            Some(e) => disasm(e, pc),
+            None => format!("unknown 0x{:04x}", inst & 0xffff),
+        };
+    }
     let rd = (inst >> 7) & 31;
     let rs1 = (inst >> 15) & 31;
     let rs2 = (inst >> 20) & 31;
@@ -78,6 +94,9 @@ pub fn disasm(inst: u32, pc: u64) -> String {
         }
         0x33 | 0x3b => {
             let w = if inst & 0x7f == 0x3b { "w" } else { "" };
+            if (f7, f3, rs1, w) == (0, 0, 0, "") {
+                return format!("mv {}, {}", r(rd), r(rs2));
+            }
             let n = match (f7, f3) {
                 (0, 0) => "add",
                 (0x20, 0) => "sub",
@@ -160,5 +179,7 @@ mod tests {
         assert_eq!(disasm(0x00008067, 0), "ret");
         assert_eq!(disasm(0x30200073, 0), "mret");
         assert_eq!(disasm(0x02a5853b, 0), "mulw a0, a1, a0");
+        assert_eq!(disasm(0x1141, 0), "addi sp, sp, -16");
+        assert_eq!(disasm(0x0000, 0), "unknown 0x0000");
     }
 }

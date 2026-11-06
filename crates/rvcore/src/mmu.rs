@@ -194,11 +194,15 @@ impl Cpu {
         self.bus.read(pa, size)
     }
 
+    /// Fetch the instruction at `pc`. A 16-bit instruction comes back in the
+    /// low half (its low two bits are not `11`); the upper half is then
+    /// whatever follows it and must be ignored.
     #[inline(always)]
     pub(crate) fn fetch(&mut self, pc: u64) -> Result<u32, Trap> {
-        // Fast path: still in the page of the previous fetch, which is in RAM.
-        // pc is 4-byte aligned, so the word never crosses the page.
-        if pc >> 12 == self.tlb.fetch_vpage {
+        // Fast path: still in the page of the previous fetch, which is in RAM,
+        // and not in the last two bytes of it (where a 32-bit instruction
+        // would continue on the next page).
+        if pc >> 12 == self.tlb.fetch_vpage && pc & 0xfff != 0xffe {
             let o = self.tlb.fetch_ram_off + (pc & 0xfff) as usize;
             if let Some(b) = self.bus.ram.get(o..o + 4) {
                 return Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
@@ -215,10 +219,16 @@ impl Cpu {
             self.tlb.fetch_vpage = pc >> 12;
             self.tlb.fetch_ram_off = off as usize;
         }
-        match self.bus.read(pa, 4) {
-            Ok(v) => Ok(v as u32),
-            Err(_) => Err(Trap::new(cause::INST_ACCESS, pc)),
+        let lo = self.bus.read(pa, 2).map_err(|_| Trap::new(cause::INST_ACCESS, pc))? as u32;
+        if lo & 3 != 3 {
+            return Ok(lo);
         }
+        // The second half of a 32-bit instruction. It may be on the next page,
+        // whose fault reports the address of that half (xepc stays at pc).
+        let pc2 = pc.wrapping_add(2);
+        let pa2 = if pc2 & 0xfff == 0 { self.translate(pc2, Access::Fetch)? } else { pa + 2 };
+        let hi = self.bus.read(pa2, 2).map_err(|_| Trap::new(cause::INST_ACCESS, pc2))? as u32;
+        Ok(lo | (hi << 16))
     }
 
     #[inline(always)]
