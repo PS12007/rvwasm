@@ -29,6 +29,8 @@ pub struct Bus {
     pub htif_exit: Option<u64>,
     /// Set by any MMIO store; tells the CPU loop to resync device state.
     pub mmio_dirty: bool,
+    /// Saves old page contents for rewinding (see `timetravel`).
+    pub journal: crate::journal::Journal,
 }
 
 impl Bus {
@@ -44,6 +46,7 @@ impl Bus {
             fromhost: None,
             htif_exit: None,
             mmio_dirty: false,
+            journal: Default::default(),
         }
     }
 
@@ -80,6 +83,8 @@ impl Bus {
         let off = pa.wrapping_sub(RAM_BASE);
         if off < self.ram.len() as u64 {
             let o = off as usize;
+            // Writes are naturally aligned here, so they stay in one page.
+            self.journal.ram_write(&self.ram, o);
             if let Some(b) = self.ram.get_mut(o..o + size) {
                 b.copy_from_slice(&val.to_le_bytes()[..size]);
                 if self.tohost.is_some() {
@@ -148,7 +153,7 @@ impl Bus {
         if (virtio::BASE..virtio::BASE + virtio::SIZE).contains(&pa) {
             return match &mut self.virtio {
                 Some(v) => {
-                    v.write(pa - virtio::BASE, val as u32, &mut self.ram);
+                    v.write(pa - virtio::BASE, val as u32, &mut self.ram, &mut self.journal);
                     Ok(())
                 }
                 None => Err(()),
@@ -190,8 +195,11 @@ impl Bus {
 
     fn write_raw(&mut self, pa: u64, val: u64) -> Result<(), ()> {
         let off = pa.checked_sub(RAM_BASE).ok_or(())? as usize;
-        let b = self.ram.get_mut(off..off + 8).ok_or(())?;
-        b.copy_from_slice(&val.to_le_bytes());
+        if off + 8 > self.ram.len() {
+            return Err(());
+        }
+        self.journal.ram_range(&self.ram, off, 8);
+        self.ram[off..off + 8].copy_from_slice(&val.to_le_bytes());
         Ok(())
     }
 

@@ -4,6 +4,7 @@
 //! the used-ring interrupt is raised immediately.
 
 use crate::bus::RAM_BASE;
+use crate::journal::Journal;
 
 pub const BASE: u64 = 0x1000_1000;
 pub const SIZE: u64 = 0x1000;
@@ -28,18 +29,18 @@ const BLK_T_GET_ID: u32 = 8;
 #[derive(Clone, Default)]
 pub struct VirtioBlk {
     pub disk: Vec<u8>,
-    device_features_sel: u32,
-    driver_features: u64,
-    driver_features_sel: u32,
-    queue_sel: u32,
-    queue_num: u32,
-    queue_ready: bool,
-    desc: u64,
-    avail: u64,
-    used: u64,
-    last_avail: u16,
-    interrupt_status: u32,
-    status: u32,
+    pub(crate) device_features_sel: u32,
+    pub(crate) driver_features: u64,
+    pub(crate) driver_features_sel: u32,
+    pub(crate) queue_sel: u32,
+    pub(crate) queue_num: u32,
+    pub(crate) queue_ready: bool,
+    pub(crate) desc: u64,
+    pub(crate) avail: u64,
+    pub(crate) used: u64,
+    pub(crate) last_avail: u16,
+    pub(crate) interrupt_status: u32,
+    pub(crate) status: u32,
     /// Number of requests serviced, exposed for stats.
     pub requests: u64,
     /// Number of write requests serviced (lets the host tell when to save the disk).
@@ -47,7 +48,7 @@ pub struct VirtioBlk {
 }
 
 /// Bounds-checked guest physical memory accessors over the RAM slice.
-struct Mem<'a>(&'a mut [u8]);
+struct Mem<'a>(&'a mut [u8], &'a mut Journal);
 
 impl Mem<'_> {
     fn range(&self, pa: u64, len: usize) -> Option<std::ops::Range<usize>> {
@@ -69,6 +70,7 @@ impl Mem<'_> {
     }
     fn write(&mut self, pa: u64, data: &[u8]) {
         if let Some(r) = self.range(pa, data.len()) {
+            self.1.ram_range(self.0, r.start, data.len());
             self.0[r].copy_from_slice(data);
         }
     }
@@ -126,7 +128,7 @@ impl VirtioBlk {
         }
     }
 
-    pub fn write(&mut self, off: u64, val: u32, ram: &mut [u8]) {
+    pub fn write(&mut self, off: u64, val: u32, ram: &mut [u8], journal: &mut Journal) {
         let set_lo = |r: &mut u64, v: u32| *r = (*r & !0xffff_ffff) | v as u64;
         let set_hi = |r: &mut u64, v: u32| *r = (*r & 0xffff_ffff) | ((v as u64) << 32);
         match off {
@@ -149,7 +151,7 @@ impl VirtioBlk {
             }
             0x050 => {
                 if val == 0 {
-                    self.process_queue(ram)
+                    self.process_queue(ram, journal)
                 }
             }
             0x064 => self.interrupt_status &= !val,
@@ -170,11 +172,11 @@ impl VirtioBlk {
         }
     }
 
-    fn process_queue(&mut self, ram: &mut [u8]) {
+    fn process_queue(&mut self, ram: &mut [u8], journal: &mut Journal) {
         if !self.queue_ready || self.queue_num == 0 {
             return;
         }
-        let mut mem = Mem(ram);
+        let mut mem = Mem(ram, journal);
         let qn = self.queue_num as u64;
         let avail_idx = mem.u16(self.avail + 2);
         let mut did_work = false;
@@ -245,6 +247,7 @@ impl VirtioBlk {
                         break;
                     }
                     if let Some(r) = mem.range(addr, len as usize) {
+                        mem.1.disk_range(&self.disk, start, end - start);
                         self.disk[start..end].copy_from_slice(&mem.0[r]);
                     }
                     pos += len as u64;

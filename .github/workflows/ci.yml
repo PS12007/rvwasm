@@ -65,6 +65,8 @@ jobs:
         run: >
           ./target/release/rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img
           --script 'echo booted-ok\n' --expect '\nbooted-ok' --max-cycles 3000000000
+      - name: Determinism, snapshots and time travel
+        run: cargo test --release -p rvcore --test timetravel
       - name: usertests -q
         timeout-minutes: 30
         run: >

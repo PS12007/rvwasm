@@ -88,17 +88,22 @@ pub struct Cpu {
     pub instret: u64,
     /// Cycles spent idle in WFI.
     pub idle_cycles: u64,
-    mcycle_off: u64,
-    minstret_off: u64,
+    pub(crate) mcycle_off: u64,
+    pub(crate) minstret_off: u64,
     /// Cycles per mtime tick.
     pub time_div: u64,
-    time_frac: u64,
-    last_sync: u64,
+    pub(crate) time_frac: u64,
+    pub(crate) last_sync: u64,
 
     pub reservation: Option<u64>,
     pub wfi: bool,
     /// Set to leave the inner loop early (interrupt state may have changed).
     pub(crate) break_loop: bool,
+    /// Instructions left in the current chunk; 0 at a synchronisation point.
+    /// Kept across `run` calls so that where the host splits its calls never
+    /// changes where devices sync and interrupts are taken: the same inputs
+    /// at the same cycles give the same execution, however it is sliced.
+    pub(crate) chunk_left: u64,
 
     // MMU caches
     pub(crate) tlb: Tlb,
@@ -113,6 +118,9 @@ pub struct Cpu {
     pub sbi: Option<SbiHandler>,
     /// Count of traps taken, for stats.
     pub traps_taken: u64,
+    /// Instructions retired before the most recent trap was taken: for an
+    /// exception, the count before the instruction that raised it.
+    pub last_trap_instret: Option<u64>,
     /// Instructions executed in each privilege mode (indexed by U=0, S=1, M=3).
     pub prv_instret: [u64; 4],
     pub halted: bool,
@@ -160,6 +168,7 @@ impl Cpu {
             reservation: None,
             wfi: false,
             break_loop: false,
+            chunk_left: 0,
             tlb: Tlb::new(),
             vm_fetch: false,
             vm_data: false,
@@ -168,6 +177,7 @@ impl Cpu {
             trace: Trace::default(),
             sbi: None,
             traps_taken: 0,
+            last_trap_instret: None,
             prv_instret: [0; 4],
             halted: false,
             halt_reason: None,
@@ -196,39 +206,48 @@ impl Cpu {
         let start = self.cycle();
         let end = start.saturating_add(budget);
         while self.cycle() < end && !self.halted && self.bus.htif_exit.is_none() {
-            self.sync_devices();
-            self.check_interrupts();
-            if self.wfi {
-                let skip = self.cycles_until_timer().clamp(1, end - self.cycle());
-                self.idle_cycles += skip;
-                continue;
+            if self.chunk_left == 0 {
+                self.sync_devices();
+                self.check_interrupts();
+                if self.wfi {
+                    let skip = self.cycles_until_timer().clamp(1, end - self.cycle());
+                    self.idle_cycles += skip;
+                    continue;
+                }
+                self.chunk_left = CHUNK;
             }
-            let n = (end - self.cycle()).min(CHUNK);
-            if self.trace.enabled {
-                self.exec_chunk::<true>(n);
-            } else {
-                self.exec_chunk::<false>(n);
-            }
+            let n = (end - self.cycle()).min(self.chunk_left);
+            let broke = if self.trace.enabled { self.exec_chunk::<true>(n) } else { self.exec_chunk::<false>(n) };
+            self.chunk_left = if broke { 0 } else { self.chunk_left - n };
         }
-        self.sync_devices();
+        if self.chunk_left == 0 {
+            // Syncing again at the next sync point changes nothing.
+            self.sync_devices();
+        } else {
+            self.sync_time();
+        }
         self.cycle() - start
     }
 
     /// Run up to `n` instructions. Chunks end at any trap or xRET, so every
     /// instruction in a chunk ran at the privilege level it started with.
+    /// Returns true if the chunk ended early.
     #[inline(always)]
-    fn exec_chunk<const TRACE: bool>(&mut self, n: u64) {
+    fn exec_chunk<const TRACE: bool>(&mut self, n: u64) -> bool {
         let prv = self.prv;
         let start = self.instret;
+        let mut broke = false;
         for _ in 0..n {
             self.step::<TRACE>();
             if self.break_loop | self.bus.mmio_dirty {
                 self.break_loop = false;
                 self.bus.mmio_dirty = false;
+                broke = true;
                 break;
             }
         }
         self.prv_instret[prv as usize & 3] += self.instret - start;
+        broke
     }
 
     /// Execute exactly one instruction (or take one exception).
@@ -310,7 +329,7 @@ impl Cpu {
     }
 
     /// Cycles until the next timer comparator fires (u64::MAX if none armed).
-    fn cycles_until_timer(&self) -> u64 {
+    pub fn cycles_until_timer(&self) -> u64 {
         let mtime = self.bus.clint.mtime;
         let mut next = self.bus.clint.mtimecmp;
         if self.menvcfg & MENVCFG_STCE != 0 {
@@ -366,6 +385,8 @@ impl Cpu {
             && if interrupt { (self.mideleg >> code) & 1 != 0 } else { (self.medeleg >> code) & 1 != 0 };
         let from = self.prv;
         self.traps_taken += 1;
+        // An exception is raised by an instruction already counted in instret.
+        self.last_trap_instret = Some(if interrupt { self.instret } else { self.instret - 1 });
         if !deleg && self.sbi.is_some() {
             // No M-mode firmware is loaded when the SBI is emulated.
             self.halt_reason = Some(format!(

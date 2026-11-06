@@ -17,14 +17,14 @@ const LSR_TEMT: u8 = 0x40;
 pub struct Uart {
     pub rx: VecDeque<u8>,
     pub tx: Vec<u8>,
-    ier: u8,
-    lcr: u8,
-    mcr: u8,
-    scr: u8,
-    dll: u8,
-    dlm: u8,
+    pub(crate) ier: u8,
+    pub(crate) lcr: u8,
+    pub(crate) mcr: u8,
+    pub(crate) scr: u8,
+    pub(crate) dll: u8,
+    pub(crate) dlm: u8,
     /// Transmitter-empty interrupt is pending (cleared by reading IIR or writing THR).
-    thre_ip: bool,
+    pub(crate) thre_ip: bool,
 }
 
 impl Uart {

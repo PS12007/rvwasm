@@ -22,19 +22,19 @@ pub enum Access {
 }
 
 #[derive(Clone, Copy)]
-struct Entry {
-    vpn: u64,
-    gen: u64,
-    ppage: u64,
+pub(crate) struct Entry {
+    pub(crate) vpn: u64,
+    pub(crate) gen: u64,
+    pub(crate) ppage: u64,
 }
 
 pub struct Tlb {
-    tables: Box<[[Entry; TLB_SIZE]; 3]>,
-    gen: u64,
+    pub(crate) tables: Box<[[Entry; TLB_SIZE]; 3]>,
+    pub(crate) gen: u64,
     /// One-entry cache for instruction fetch: the virtual page the PC is in
     /// and that page's byte offset in RAM. u64::MAX when invalid.
-    fetch_vpage: u64,
-    fetch_ram_off: usize,
+    pub(crate) fetch_vpage: u64,
+    pub(crate) fetch_ram_off: usize,
 }
 
 impl Tlb {

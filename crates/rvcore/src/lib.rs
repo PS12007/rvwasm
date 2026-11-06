@@ -15,9 +15,12 @@ pub mod disasm;
 pub mod elf;
 mod exec;
 pub mod fdt;
+pub mod journal;
 pub mod linux;
 pub mod mmu;
 pub mod rvc;
+pub mod snapshot;
+pub mod timetravel;
 pub mod trace;
 
 pub use bus::{Bus, RAM_BASE};
