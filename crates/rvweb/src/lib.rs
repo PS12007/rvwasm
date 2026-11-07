@@ -6,6 +6,7 @@ use rvcore::{
     timetravel::TimeTravel,
     Cpu, MachineConfig,
 };
+use std::sync::atomic::{AtomicU32, Ordering};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -24,7 +25,49 @@ const TT_BYTES: usize = 64 << 20;
 impl Emulator {
     fn with(mut cpu: Cpu, symbols: Vec<(String, u64)>) -> Emulator {
         let tt = TimeTravel::new(&mut cpu, TT_INTERVAL, TT_BYTES);
+        cpu.enable_jit(install_module);
         Emulator { cpu, symbols, tt }
+    }
+}
+
+// The JIT hands modules of compiled blocks to this, which compiles them
+// (synchronously: fine in a worker or Node) against this module's memory
+// and function table, and appends their functions to the table.
+#[wasm_bindgen(inline_js = r#"
+export function jit_install(bytes, memory, table) {
+  try {
+    const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { e: { m: memory, t: table } });
+    const n = Object.keys(inst.exports).length;
+    const base = table.grow(n);
+    for (let i = 0; i < n; i++) table.set(base + i, inst.exports['f' + i]);
+    return base;
+  } catch (e) {
+    console.error('rvwasm: JIT disabled:', e);
+    return 0;
+  }
+}
+"#)]
+extern "C" {
+    fn jit_install(bytes: &[u8], memory: JsValue, table: JsValue) -> u32;
+}
+
+static INSTALL_FAILURES: AtomicU32 = AtomicU32::new(0);
+
+fn install_module(bytes: &[u8]) -> Option<u32> {
+    match jit_install(bytes, wasm_bindgen::memory(), wasm_bindgen::function_table()) {
+        0 => {
+            INSTALL_FAILURES.fetch_add(1, Ordering::Relaxed);
+            None
+        }
+        base => Some(base),
+    }
+}
+
+fn jit_prep(on: bool) -> impl Fn(&mut Cpu) {
+    move |cpu: &mut Cpu| {
+        if on {
+            cpu.enable_jit(install_module);
+        }
     }
 }
 
@@ -127,6 +170,47 @@ impl Emulator {
     /// Back to just before the most recent trap; false if out of reach.
     pub fn back_to_last_trap(&mut self) -> bool {
         self.tt.back_to_last_trap(&mut self.cpu)
+    }
+
+    // ------------------------------------------------------------------ JIT
+
+    /// Turn compiling hot code to WebAssembly on or off (on by default).
+    pub fn set_jit(&mut self, on: bool) {
+        if on {
+            if self.cpu.jit.is_none() {
+                self.cpu.enable_jit(install_module);
+            }
+        } else {
+            self.cpu.disable_jit();
+        }
+    }
+
+    /// Tuning for tests: blocks compile after `hot` starts, in batches of
+    /// `batch` (or after `delay` instructions).
+    pub fn jit_tune(&mut self, hot: u32, batch: u32, delay: f64) {
+        if let Some(j) = self.cpu.jit.as_deref_mut() {
+            j.hot = hot.clamp(1, 65533) as u16;
+            j.batch = batch.max(1) as usize;
+            j.delay = delay as u64;
+        }
+    }
+
+    /// [enabled, blocks compiled, modules, blocks invalidated, instructions
+    /// run as compiled code].
+    pub fn jit_stats(&self) -> Vec<f64> {
+        match self.cpu.jit.as_deref() {
+            Some(j) => {
+                let s = j.stats;
+                vec![1.0, s.blocks as f64, s.modules as f64, s.invalidated as f64, s.insts as f64]
+            }
+            None => vec![0.0; 5],
+        }
+    }
+
+    /// True if `bytes` (a bare-metal test) has exited through `tohost`;
+    /// the exit code, or -1 while still running.
+    pub fn exit_code(&self) -> f64 {
+        self.cpu.bus.htif_exit.map_or(-1.0, |c| c as f64)
     }
 
     /// True while behind the present.
@@ -340,14 +424,38 @@ fn measurement_json(m: rvcore::bench::Measurement) -> String {
 /// Benchmark a bare-metal riscv-tests program for at least `min_secs` of
 /// execution. Returns JSON `{instret, seconds, runs}` (seconds per run).
 #[wasm_bindgen]
-pub fn bench_baremetal(elf: &[u8], min_secs: f64) -> Result<String, JsError> {
-    rvcore::bench::bench_baremetal(elf, &now_secs, min_secs).map(measurement_json).map_err(|e| JsError::new(&e))
+pub fn bench_baremetal(elf: &[u8], min_secs: f64, jit: bool) -> Result<String, JsError> {
+    rvcore::bench::bench_baremetal(elf, &now_secs, min_secs, &jit_prep(jit))
+        .map(measurement_json)
+        .map_err(|e| JsError::new(&e))
 }
 
 /// Benchmark the xv6 boot + shell workload. Returns JSON like `bench_baremetal`.
 #[wasm_bindgen]
-pub fn bench_xv6(kernel: &[u8], disk: &[u8]) -> Result<String, JsError> {
-    rvcore::bench::bench_xv6(kernel, disk, &now_secs, 0.0).map(measurement_json).map_err(|e| JsError::new(&e))
+pub fn bench_xv6(kernel: &[u8], disk: &[u8], jit: bool) -> Result<String, JsError> {
+    rvcore::bench::bench_xv6(kernel, disk, &now_secs, 0.0, &jit_prep(jit))
+        .map(measurement_json)
+        .map_err(|e| JsError::new(&e))
+}
+
+/// Run a riscv-tests ELF; returns "" on pass, else the failure. With `jit`,
+/// every block is compiled the first time it runs, to test the compiler.
+#[wasm_bindgen]
+pub fn run_isa_test(elf: &[u8], jit: bool) -> String {
+    let prep = |cpu: &mut Cpu| {
+        if jit {
+            cpu.enable_jit(install_module);
+            if let Some(j) = cpu.jit.as_deref_mut() {
+                (j.hot, j.batch, j.delay) = (1, 1, 0);
+            }
+        }
+    };
+    let failures = INSTALL_FAILURES.load(Ordering::Relaxed);
+    match rvcore::run_isa_test_with(elf, 100_000_000, &prep) {
+        Ok(()) if INSTALL_FAILURES.load(Ordering::Relaxed) != failures => "the JIT was disabled".into(),
+        Ok(()) => String::new(),
+        Err(e) => e,
+    }
 }
 
 /// Names of the bare-metal benchmark programs.

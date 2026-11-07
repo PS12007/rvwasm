@@ -130,7 +130,7 @@ rvwasm run build/xv6/kernel/kernel --disk build/xv6/fs.img --trace 200000 --trac
 
 ## Speed
 
-It's a straightforward interpreter. On my 4-core cloud VM:
+The core is an interpreter. On my 4-core cloud VM:
 
 | | million instructions per second |
 |---|---:|
@@ -138,13 +138,43 @@ It's a straightforward interpreter. On my 4-core cloud VM:
 | WebAssembly in Chromium | ~130 |
 | WebAssembly in Node 22 | ~120 |
 
-So the browser build runs at about two thirds of native speed. Recording history for time
-travel costs about 5% (a bit test on each store, and a checkpoint every million
-instructions). Both builds run identical
-workloads (nine programs from riscv-tests/benchmarks plus an xv6 session) through the same
-Rust code in `rvcore::bench`, and only guest execution is timed. You can run the browser half
-yourself on the [benchmark page](https://ps12007.github.io/rvwasm/bench.html); CI publishes
-both sets of numbers in each run's summary.
+So the interpreter in the browser runs at about two thirds of native speed. Recording history
+for time travel costs about 5% (a bit test on each store, and a checkpoint every million
+instructions).
+
+### Compiling to WebAssembly
+
+In the browser, code that runs often is compiled. Once a block (a run of instructions within
+one page, up to a jump) has started 1,000 times, it is translated into a WebAssembly function,
+and the browser compiles that to native code like any other WebAssembly. The run loop then
+calls the function instead of interpreting the block. The guest registers it uses live in
+WebAssembly locals, a branch back to the block's start loops inside the function, and the usual
+load or store (aligned, to RAM, through a TLB hit) is a few inline checks and one memory access.
+
+| workload, WebAssembly in Node | interpreter | with the JIT |
+|---|---:|---:|
+| xv6 session (`rvwasm bench`'s xv6 workload) | 1× | **3.3 to 3.7×** |
+| BusyBox shell loop under Linux | 1× | 1.4× |
+| Linux boot | 1× | about the same |
+
+These are ratios measured back to back on one laptop; CI publishes absolute numbers for the
+interpreter and the JIT in each run's summary. Boot code mostly runs a few hundred times and
+is never worth compiling, and BusyBox's shell spends its time in short blocks between calls, so
+the cost of entering each block dominates. Linking blocks directly to each other is next.
+
+Compiled code is exact, not approximate. A block only runs when it fits in what is left of the
+current chunk, so device syncs and interrupts land on the same instruction counts as without
+it; anything unusual (a fault, a device access, an unaligned access, a write to a page holding
+compiled code) goes back to the interpreter for that one instruction. Writes to pages with
+compiled code throw that code away, which covers self-modifying code, program loading and DMA.
+`tests/jit.mjs`, run in CI, runs every riscv-tests program with every block compiled, then
+boots xv6 and Linux twice, with and without the JIT, and checks that the two machines are
+byte-for-byte identical (registers, devices, RAM and disk) at every checkpoint. Time travel
+and saved machines work unchanged with it on, and the Speed panel can turn it off.
+
+Both builds run identical workloads (nine programs from riscv-tests/benchmarks plus an xv6
+session) through the same Rust code in `rvcore::bench`, and only guest execution is timed. You
+can run the browser half yourself on the [benchmark page](https://ps12007.github.io/rvwasm/bench.html).
 
 ## Building it
 
@@ -188,7 +218,8 @@ mirrors, pinned to exact commits).
   instructions, `mmu.rs` the page-table walker and
   TLBs, `devices/` the UART, CLINT, PLIC and virtio disk, and `linux.rs` the SBI firmware and
   device tree. `snapshot.rs` saves and restores the machine, `journal.rs` keeps the old
-  contents of written pages, and `timetravel.rs` puts the two together.
+  contents of written pages, and `timetravel.rs` puts the two together. `jit/` compiles hot
+  blocks to WebAssembly (`jit/wasm.rs` writes the modules by hand, with no dependencies).
 - `crates/rvcli` is the `rvwasm` command: `test`, `run` and `bench`.
 - `crates/rvweb` is the wasm-bindgen wrapper the page talks to.
 - `web/` is the site. The emulator runs in a Web Worker so typing stays responsive, and

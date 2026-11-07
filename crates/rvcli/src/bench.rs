@@ -49,7 +49,7 @@ pub fn cmd_bench(args: &[String]) -> ExitCode {
             eprintln!("skip {name}: {path} not found");
             continue;
         };
-        match best(&|| bench_baremetal(&bytes, &now, 0.3)) {
+        match best(&|| bench_baremetal(&bytes, &now, 0.3, &|_| {})) {
             Ok(m) => rows.push((name.into(), m)),
             Err(e) => {
                 eprintln!("{name}: {e}");
@@ -58,7 +58,7 @@ pub fn cmd_bench(args: &[String]) -> ExitCode {
         }
     }
     match (std::fs::read(format!("{xv6_dir}/kernel/kernel")), std::fs::read(format!("{xv6_dir}/fs.img"))) {
-        (Ok(k), Ok(d)) => match best(&|| bench_xv6(&k, &d, &now, 0.0)) {
+        (Ok(k), Ok(d)) => match best(&|| bench_xv6(&k, &d, &now, 0.0, &|_| {})) {
             Ok(m) => rows.push(("xv6".into(), m)),
             Err(e) => {
                 eprintln!("xv6: {e}");

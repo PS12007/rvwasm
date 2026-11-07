@@ -22,12 +22,12 @@ onmessage = async (ev) => {
     for (const name of bench_names()) {
       postMessage({ type: 'progress', name });
       const elf = await bytes(`images/bench/${name}.riscv`);
-      postMessage({ type: 'result', name, ...best(() => bench_baremetal(elf, 0.3)) });
+      postMessage({ type: 'result', name, ...best(() => bench_baremetal(elf, 0.3, true)) });
     }
     if (xv6) {
       postMessage({ type: 'progress', name: 'xv6' });
       const [k, d] = await Promise.all([bytes('images/xv6-kernel'), bytes('images/xv6-fs.img')]);
-      postMessage({ type: 'result', name: 'xv6', ...best(() => bench_xv6(k, d)) });
+      postMessage({ type: 'result', name: 'xv6', ...best(() => bench_xv6(k, d, true)) });
     }
     postMessage({ type: 'done' });
   } catch (e) {

@@ -1,9 +1,11 @@
 // Runs the benchmark suite on the WebAssembly build under Node (V8, the same
 // engine as Chrome), mirroring `rvwasm bench` for the native build.
 //
-//   node bench/wasm-bench.mjs [--bench-dir build/bench] [--xv6 build/xv6] [--reps 3] [--json out.json]
+//   node bench/wasm-bench.mjs [--bench-dir build/bench] [--xv6 build/xv6] [--reps 3] [--json out.json] [--jit on|off]
+//
+// With --jit on (the default) hot code is compiled to WebAssembly, as on the site.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,7 +16,8 @@ const benchDir = args['bench-dir'] || path.join(root, 'build/bench');
 const xv6Dir = args.xv6 || path.join(root, 'build/xv6');
 const reps = Number(args.reps || 3);
 
-const pkg = await import(path.join(root, 'web/pkg/rvweb.js'));
+const jit = (args.jit || 'on') !== 'off';
+const pkg = await import(pathToFileURL(path.join(root, 'web/pkg/rvweb.js')).href);
 pkg.initSync({ module: readFileSync(path.join(root, 'web/pkg/rvweb_bg.wasm')) });
 
 function best(fn) {
@@ -31,14 +34,14 @@ for (const name of pkg.bench_names()) {
   const f = path.join(benchDir, `${name}.riscv`);
   if (!existsSync(f)) { console.error(`skip ${name}: ${f} not found`); continue; }
   const elf = readFileSync(f);
-  results.push({ name, ...best(() => pkg.bench_baremetal(elf, 0.3)) });
+  results.push({ name, ...best(() => pkg.bench_baremetal(elf, 0.3, jit)) });
 }
 const kf = path.join(xv6Dir, 'kernel/kernel');
 const df = path.join(xv6Dir, 'fs.img');
 if (existsSync(kf) && existsSync(df)) {
   const kernel = readFileSync(kf);
   const disk = readFileSync(df);
-  results.push({ name: 'xv6', ...best(() => pkg.bench_xv6(kernel, disk)) });
+  results.push({ name: 'xv6', ...best(() => pkg.bench_xv6(kernel, disk, jit)) });
 } else {
   console.error('skip xv6: images not found');
 }
@@ -48,5 +51,5 @@ for (const r of results) {
   console.log(`${r.name.padEnd(12)} ${String(r.instret).padStart(12)} ${(r.seconds * 1e3).toFixed(3).padStart(12)} ${(r.instret / r.seconds / 1e6).toFixed(1).padStart(8)}`);
 }
 if (args.json) {
-  writeFileSync(args.json, JSON.stringify({ engine: `wasm (node ${process.version})`, results }) + '\n');
+  writeFileSync(args.json, JSON.stringify({ engine: `wasm${jit ? ' + JIT' : ''} (node ${process.version})`, results }) + '\n');
 }

@@ -274,6 +274,9 @@ impl Cpu {
             return Err("machine state is truncated".into());
         }
         self.bus.uart.tx.clear();
+        self.jit_resv = self.reservation.unwrap_or(u64::MAX);
+        // RAM was rewritten behind the journal's back.
+        self.jit_flush();
         Ok(())
     }
 

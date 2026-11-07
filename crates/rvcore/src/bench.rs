@@ -97,17 +97,37 @@ pub fn run_script(cpu: &mut Cpu, input: &str, until: &str, max_cycles: u64) -> R
     Err(format!("did not see {until:?} within {max_cycles} cycles; output ends with:\n{tail}"))
 }
 
-/// Benchmark a bare-metal riscv-tests program.
-pub fn bench_baremetal(bytes: &[u8], now: &dyn Fn() -> f64, min_secs: f64) -> Result<Measurement, String> {
-    measure(min_secs, now, || baremetal_machine(bytes), |cpu| run_to_exit(cpu, 2_000_000_000))
-}
-
-/// Benchmark the xv6 boot + shell workload.
-pub fn bench_xv6(kernel: &[u8], disk: &[u8], now: &dyn Fn() -> f64, min_secs: f64) -> Result<Measurement, String> {
+/// Benchmark a bare-metal riscv-tests program. `prep` configures each
+/// fresh machine (the WebAssembly build uses it to turn on the JIT).
+pub fn bench_baremetal(
+    bytes: &[u8],
+    now: &dyn Fn() -> f64,
+    min_secs: f64,
+    prep: &dyn Fn(&mut Cpu),
+) -> Result<Measurement, String> {
     measure(
         min_secs,
         now,
-        || build_machine(MachineConfig { ram_size: 128 << 20, kernel: kernel.to_vec(), disk: Some(disk.to_vec()) }),
+        || baremetal_machine(bytes).map(|mut c| (prep(&mut c), c).1),
+        |cpu| run_to_exit(cpu, 2_000_000_000),
+    )
+}
+
+/// Benchmark the xv6 boot + shell workload.
+pub fn bench_xv6(
+    kernel: &[u8],
+    disk: &[u8],
+    now: &dyn Fn() -> f64,
+    min_secs: f64,
+    prep: &dyn Fn(&mut Cpu),
+) -> Result<Measurement, String> {
+    measure(
+        min_secs,
+        now,
+        || {
+            build_machine(MachineConfig { ram_size: 128 << 20, kernel: kernel.to_vec(), disk: Some(disk.to_vec()) })
+                .map(|mut c| (prep(&mut c), c).1)
+        },
         |cpu| run_script(cpu, XV6_SCRIPT, XV6_UNTIL, 20_000_000_000).map(|_| ()),
     )
 }

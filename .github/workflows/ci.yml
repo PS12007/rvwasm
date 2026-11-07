@@ -45,6 +45,10 @@ jobs:
         run: cargo build --release -p rvcli
       - name: Run tests
         run: ./target/release/rvwasm test build/riscv-tests/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: riscv-tests
+          path: build/riscv-tests
 
   xv6:
     name: xv6 boot + usertests
@@ -126,7 +130,7 @@ jobs:
 
   web:
     name: WebAssembly build + benchmarks
-    needs: [xv6, linux]
+    needs: [riscv-tests, xv6, linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write # for the gh-pages branch
@@ -154,6 +158,10 @@ jobs:
         with:
           name: linux-images
           path: build/linux
+      - uses: actions/download-artifact@v4
+        with:
+          name: riscv-tests
+          path: build/riscv-tests
       - name: Build benchmark programs
         run: ./scripts/build-bench.sh
       - name: Native benchmark
@@ -162,16 +170,21 @@ jobs:
           ./target/release/rvwasm bench --json build/bench-native.json
       - name: Build WebAssembly package and site
         run: ./scripts/build-web.sh
+      - name: JIT (riscv-tests compiled; xv6 and Linux identical with and without it)
+        run: node tests/jit.mjs
       - name: WebAssembly benchmark (Node)
-        run: node bench/wasm-bench.mjs --json build/bench-wasm.json
+        run: |
+          node bench/wasm-bench.mjs --jit off --json build/bench-wasm-interp.json
+          node bench/wasm-bench.mjs --json build/bench-wasm.json
       - name: Report
         run: |
           {
             echo "## Native vs WebAssembly"
             echo
             echo "Same runner, same workloads; MIPS = million guest instructions per second."
+            echo "The short bare-metal programs finish before anything is hot enough to compile."
             echo
-            node bench/compare.mjs build/bench-native.json build/bench-wasm.json
+            node bench/compare.mjs build/bench-native.json build/bench-wasm-interp.json build/bench-wasm.json
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:

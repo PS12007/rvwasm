@@ -453,7 +453,13 @@ let prevRegs = [];
 let prevPriv = [];
 let privShare = [0, 0, 0];
 
+let prevJit = [0, 0];
+let jitShare = 0;
+let jitOn = true;
+
 function resetMeters() {
+  prevJit = [0, 0];
+  jitShare = 0;
   prevPriv = [];
   prevRegs = [];
   prevFregs = [];
@@ -484,6 +490,14 @@ function renderStats(m) {
   $('uptime').textContent = fmtTime(m.uptime);
   $('traps').textContent = fmtCount(m.csrs._traps);
   $('disk').textContent = fmtCount(m.csrs._disk_requests);
+  // Share of the instructions since the last update that ran as compiled code.
+  const [jitEnabled, blocks, , , compiled] = m.jit;
+  const dRun = m.instret - prevJit[0];
+  const dJit = compiled - prevJit[1];
+  prevJit = [m.instret, compiled];
+  if (dRun > 0) jitShare = 0.6 * jitShare + 0.4 * Math.min(1, Math.max(0, dJit) / dRun);
+  $('jit-share').textContent = jitEnabled ? `${Math.round(100 * jitShare)}%` : 'off';
+  $('jit-blocks').textContent = jitEnabled ? fmtCount(blocks) : '-';
 
   // Lamps: where the CPU is right now, plus a smoothed share of recent time.
   $('lamp-m').classList.toggle('on', m.privilege === 3);
@@ -697,6 +711,11 @@ function onDisk(m) {
   } else el.textContent = 'Started from a fresh disk. Files you change are saved in this browser.';
 }
 $('disk-dl').onclick = () => worker.postMessage({ type: 'disk-download' });
+$('jit-toggle').onclick = () => {
+  jitOn = !jitOn;
+  $('jit-toggle').querySelector('.cap').textContent = jitOn ? 'JIT on' : 'JIT off';
+  worker.postMessage({ type: 'jit', on: jitOn });
+};
 $('disk-reset').onclick = () => boot(true);
 
 // ------------------------------------------------------------ tooltips

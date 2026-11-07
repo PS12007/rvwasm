@@ -86,7 +86,10 @@
           <div><span class="engr">Uptime</span><span class="readout" id="uptime">-</span></div>
           <div><span class="engr">Traps<button class="qmark" data-tip="A trap is any time the CPU stops what it was doing and jumps into the kernel: a program asking for a service (system call), a timer tick, a key press, or an error like touching memory it may not.">?</button></span><span class="readout" id="traps">-</span></div>
           <div><span class="engr">Disk I/O</span><span class="readout" id="disk">-</span></div>
+          <div><span class="engr">Compiled<button class="qmark" data-tip="Code that runs often is translated from RISC-V into WebAssembly as it runs, and your browser compiles that to native code (a JIT). This is the share of recent instructions that ran that way instead of through the interpreter. Results are identical either way; only the speed changes.">?</button></span><span class="readout" id="jit-share">-</span></div>
+          <div><span class="engr">Blocks</span><span class="readout" id="jit-blocks">-</span></div>
         </div>
+        <div class="rec-row"><button class="key small" id="jit-toggle" title="Turn compiling to WebAssembly on or off"><span class="cap">JIT on</span></button></div>
       </details>
 
       <details class="module" id="pc-module" open>
@@ -210,6 +213,7 @@
       <h3>What's emulated</h3>
       <ul>
         <li>Time travel: the machine can run backwards, one instruction at a time, because every run is exactly repeatable.</li>
+        <li>A JIT: code that runs often is compiled from RISC-V to WebAssembly while it runs, which your browser turns into native code. A busy xv6 session runs over three times faster, with results identical to the interpreter's down to the last byte.</li>
         <li>A 64-bit RISC-V processor, RV64GC (RV64IMAFDC with Zicsr and Zifencei): integer maths, multiply/divide, atomics, single and double precision floating point, 16-bit compressed instructions and control registers. That is the instruction set standard RISC-V Linux software is built for. On top of that it has the bit-manipulation extensions (Zba, Zbb, Zbc, Zbs) and Zicond, which Linux uses for its string routines.</li>
         <li>Machine, Supervisor and User privilege modes, traps and interrupts.</li>
         <li>Sv39 virtual memory with a software TLB.</li>

@@ -101,6 +101,8 @@ pub struct Cpu {
     pub(crate) last_sync: u64,
 
     pub reservation: Option<u64>,
+    /// `reservation` as a plain word (u64::MAX for none), for compiled code.
+    pub(crate) jit_resv: u64,
     pub wfi: bool,
     /// Set to leave the inner loop early (interrupt state may have changed).
     pub(crate) break_loop: bool,
@@ -117,7 +119,14 @@ pub struct Cpu {
     pub(crate) data_prv: u8,
 
     /// Expansions of every 16-bit instruction.
-    rvc: &'static crate::rvc::Table,
+    pub(crate) rvc: &'static crate::rvc::Table,
+
+    /// Compiled blocks (WebAssembly builds only; see `jit`).
+    pub jit: Option<Box<crate::jit::Jit>>,
+    /// Set by the JIT's memory helpers when the interpreter must take over.
+    pub(crate) jit_bail: u32,
+    /// Instructions a compiled loop may run before returning.
+    pub(crate) jit_budget: u32,
 
     pub trace: Trace,
     pub sbi: Option<SbiHandler>,
@@ -174,6 +183,7 @@ impl Cpu {
             time_frac: 0,
             last_sync: 0,
             reservation: None,
+            jit_resv: u64::MAX,
             wfi: false,
             break_loop: false,
             chunk_left: 0,
@@ -182,6 +192,9 @@ impl Cpu {
             vm_data: false,
             data_prv: PRV_M,
             rvc: crate::rvc::table(),
+            jit: None,
+            jit_bail: 0,
+            jit_budget: 0,
             trace: Trace::default(),
             sbi: None,
             traps_taken: 0,
@@ -192,6 +205,12 @@ impl Cpu {
         };
         cpu.update_mmu();
         cpu
+    }
+
+    #[inline]
+    pub(crate) fn set_reservation(&mut self, r: Option<u64>) {
+        self.reservation = r;
+        self.jit_resv = r.unwrap_or(u64::MAX);
     }
 
     /// Leave the inner execution loop after the current instruction.
@@ -215,6 +234,7 @@ impl Cpu {
         let end = start.saturating_add(budget);
         while self.cycle() < end && !self.halted && self.bus.htif_exit.is_none() {
             if self.chunk_left == 0 {
+                self.jit_maybe_compile();
                 self.sync_devices();
                 self.check_interrupts();
                 if self.wfi {
@@ -242,11 +262,49 @@ impl Cpu {
     /// Returns true if the chunk ended early.
     #[inline(always)]
     fn exec_chunk<const TRACE: bool>(&mut self, n: u64) -> bool {
+        if !TRACE && self.jit.is_some() {
+            return self.exec_chunk_jit(n);
+        }
         let prv = self.prv;
         let start = self.instret;
         let mut broke = false;
         for _ in 0..n {
             self.step::<TRACE>();
+            if self.break_loop | self.bus.mmio_dirty {
+                self.break_loop = false;
+                self.bus.mmio_dirty = false;
+                broke = true;
+                break;
+            }
+        }
+        self.prv_instret[prv as usize & 3] += self.instret - start;
+        broke
+    }
+
+    /// `exec_chunk` with compiled blocks run where there are any.
+    #[inline(always)]
+    fn exec_chunk_jit(&mut self, n: u64) -> bool {
+        let prv = self.prv;
+        let start = self.instret;
+        let end = start + n;
+        let mut broke = false;
+        // Only places where a block can start are looked up: the chunk's
+        // first instruction, jump and branch targets and fall-throughs, and
+        // whatever follows a block or an instruction the JIT left alone.
+        let mut head = true;
+        while self.instret < end {
+            let mut then_head = false;
+            if head {
+                match self.jit_enter(end - self.instret) {
+                    crate::jit::Enter::Ran => continue,
+                    crate::jit::Enter::Miss => {}
+                    crate::jit::Enter::Interpret => then_head = true,
+                }
+            }
+            let pc = self.pc;
+            self.step::<false>();
+            let d = self.pc.wrapping_sub(pc);
+            head = then_head || (d != 2 && d != 4);
             if self.break_loop | self.bus.mmio_dirty {
                 self.break_loop = false;
                 self.bus.mmio_dirty = false;

@@ -65,7 +65,7 @@ fn illegal(inst: u32) -> Result<(), Trap> {
     Err(Trap::new(cause::ILLEGAL_INST, inst as u64))
 }
 
-fn div(a: u64, b: u64) -> u64 {
+pub(crate) fn div(a: u64, b: u64) -> u64 {
     let (a, b) = (a as i64, b as i64);
     if b == 0 {
         u64::MAX
@@ -73,10 +73,10 @@ fn div(a: u64, b: u64) -> u64 {
         a.wrapping_div(b) as u64
     }
 }
-fn divu(a: u64, b: u64) -> u64 {
+pub(crate) fn divu(a: u64, b: u64) -> u64 {
     a.checked_div(b).unwrap_or(u64::MAX)
 }
-fn rem(a: u64, b: u64) -> u64 {
+pub(crate) fn rem(a: u64, b: u64) -> u64 {
     let (a, b) = (a as i64, b as i64);
     if b == 0 {
         a as u64
@@ -84,7 +84,7 @@ fn rem(a: u64, b: u64) -> u64 {
         a.wrapping_rem(b) as u64
     }
 }
-fn remu(a: u64, b: u64) -> u64 {
+pub(crate) fn remu(a: u64, b: u64) -> u64 {
     if b == 0 {
         a
     } else {
@@ -309,14 +309,14 @@ impl Cpu {
                 }
                 let pa = self.atomic_addr(addr, size, Access::Load)?;
                 let v = self.phys_rw(pa, size);
-                self.reservation = Some(pa);
+                self.set_reservation(Some(pa));
                 self.x[rd(inst)] = sx(v);
             }
             // SC
             0x03 => {
                 let pa = self.atomic_addr(addr, size, Access::Store)?;
                 let ok = self.reservation == Some(pa);
-                self.reservation = None;
+                self.set_reservation(None);
                 if ok {
                     self.phys_store_atomic(pa, size, src);
                 }

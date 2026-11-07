@@ -14,6 +14,7 @@ const IDLE_HZ = 100_000_000;  // guest cycles per real second while the guest id
 const STATS_MS = 250;
 
 let emu = null;
+let jitOn = true; // compile hot code to WebAssembly (see crates/rvcore/src/jit)
 let paused = false;
 let scheduled = false;
 let lastLoop = 0;
@@ -127,6 +128,7 @@ async function boot(image, term, freshDisk = false, custom = null) {
     emu = new Emulator(kernel, disk, 128);
     diskStatus({ restored: !!saved });
   }
+  emu.set_jit(jitOn);
   startTime = performance.now();
   lastLoop = lastStats = startTime;
   lastStatsInstret = 0;
@@ -227,6 +229,7 @@ function sendStats(now) {
     traceCount: emu.trace_count(),
     history: Array.from(emu.history()),
     replaying: emu.replaying(),
+    jit: Array.from(emu.jit_stats()),
   });
 }
 
@@ -292,6 +295,10 @@ onmessage = async (ev) => {
           const bytes = emu.save_snapshot();
           postMessage({ type: 'snapshot-file', bytes }, [bytes.buffer]);
         }
+        break;
+      case 'jit':
+        jitOn = m.on;
+        emu?.set_jit(jitOn);
         break;
       case 'trace-start':
         emu?.trace_start(m.capacity);

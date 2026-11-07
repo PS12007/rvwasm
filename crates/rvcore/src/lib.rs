@@ -17,6 +17,7 @@ pub mod elf;
 mod exec;
 pub mod fdt;
 mod fpu;
+pub mod jit;
 pub mod journal;
 pub mod linux;
 pub mod mmu;
@@ -67,12 +68,18 @@ pub fn build_machine(cfg: MachineConfig) -> Result<Cpu, String> {
 /// Run a riscv-tests style ELF until it reports via `tohost`.
 /// Returns Ok(()) on pass, Err(test number or reason) otherwise.
 pub fn run_isa_test(bytes: &[u8], max_cycles: u64) -> Result<(), String> {
+    run_isa_test_with(bytes, max_cycles, &|_| {})
+}
+
+/// `run_isa_test`, with `prep` applied to the machine first.
+pub fn run_isa_test_with(bytes: &[u8], max_cycles: u64, prep: &dyn Fn(&mut Cpu)) -> Result<(), String> {
     let elf = elf::Elf::parse(bytes)?;
     let tohost = elf.symbol("tohost").ok_or("no tohost symbol")?;
     let mut cpu = Cpu::new(Bus::new(16 << 20));
     cpu.pc = load_elf(&mut cpu, bytes)?;
     cpu.bus.tohost = Some(tohost);
     cpu.bus.fromhost = elf.symbol("fromhost");
+    prep(&mut cpu);
     cpu.run(max_cycles);
     match cpu.bus.htif_exit {
         Some(0) => Ok(()),

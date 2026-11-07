@@ -22,6 +22,7 @@ pub enum Access {
 }
 
 #[derive(Clone, Copy)]
+#[repr(C)] // compiled code reads entries
 pub(crate) struct Entry {
     pub(crate) vpn: u64,
     pub(crate) gen: u64,
@@ -250,10 +251,10 @@ impl Cpu {
     }
 
     #[inline(always)]
-    fn phys_write(&mut self, pa: u64, size: usize, val: u64, va: u64) -> Result<(), Trap> {
+    pub(crate) fn phys_write(&mut self, pa: u64, size: usize, val: u64, va: u64) -> Result<(), Trap> {
         if let Some(r) = self.reservation {
             if r & !7 == pa & !7 {
-                self.reservation = None;
+                self.set_reservation(None);
             }
         }
         if pa < RAM_BASE {
@@ -316,7 +317,7 @@ impl Cpu {
     pub(crate) fn phys_store_atomic(&mut self, pa: u64, size: usize, val: u64) {
         if let Some(r) = self.reservation {
             if r & !7 == pa & !7 {
-                self.reservation = None;
+                self.set_reservation(None);
             }
         }
         let _ = self.bus.write(pa, size, val);

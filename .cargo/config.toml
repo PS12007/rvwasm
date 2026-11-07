@@ -1,0 +1,4 @@
+# The JIT appends compiled blocks to the module's function table, which the
+# linker makes fixed-size unless told otherwise.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--growable-table"]
